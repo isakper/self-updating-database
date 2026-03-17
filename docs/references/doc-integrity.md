@@ -5,7 +5,7 @@ Last reviewed: 2026-03-17
 ## Purpose
 This policy defines the minimum doc structure and integrity rules enforced by doc-lint.
 
-## Required docs
+## Required docs (v1)
 - `AGENTS.md`
 - `ARCHITECTURE.md`
 - `docs/PLANS.md`
