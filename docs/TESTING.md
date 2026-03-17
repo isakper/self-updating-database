@@ -1,55 +1,52 @@
 # Testing
 
-Last reviewed: 2026-02-23
-
+Last reviewed: 2026-03-17
 
 ## Default stance
+
 - Write the test first when practical, especially for bugs and boundary behavior.
 - Prefer deterministic tests that run fast.
 - Test behavior and invariants, not implementation details.
+- Treat the source-database immutability rule as a first-class invariant.
 
-## Coverage
-- Target: 100% coverage for both Python and TypeScript.
+## Language direction
+
+- Product code is TypeScript for both backend and frontend.
+
+## Coverage goals
+
+- Target high coverage for core TypeScript backend and frontend logic.
+- Focus first on ingestion, pipeline execution, query generation/execution, and clustering behavior.
 - If a line is truly untestable, document the reason inline and in the PR description.
 
 ## Test taxonomy
-- Unit tests: pure logic, no network, no real DB.
-- Integration tests: real DB or external services (local containers or fakes).
-- E2E/UI tests: optional, only for critical user journeys when stable.
 
-## Where tests go
-- Python: `tests/` mirroring the package/module structure.
-- TypeScript: `src/**/__tests__` or `tests/` (choose one and keep it consistent).
+- Unit tests: pure TypeScript logic, no network, no real DB.
+- Integration tests: real or containerized databases for source DB, optimized DB, and pipeline execution flows.
+- Contract tests: shared request/response and schema contracts between `apps/web`, `apps/api`, and `packages/shared`.
+- E2E/UI tests: upload flow, query flow, and query history sanity.
 
-## Tooling (recommended for agents)
-- Python: `pytest`
-- TypeScript: `vitest` (fast, watch mode, good TS ergonomics)
+## Where tests should go
 
-## How to run tests
-Document the canonical commands for this repo here and keep them stable.
+- Frontend: colocated TypeScript tests in `apps/web`.
+- Backend: colocated TypeScript tests in `apps/api` and `packages/*`.
 
-Examples (pick the actual ones and replace these):
-- Python: `pytest`
-- TypeScript: `npm test` or `pnpm test`
-- Coverage:
-  - Python: `pytest --cov --cov-report=term-missing`
-  - TypeScript: `vitest run --coverage`
+## Tooling direction
 
-## What to test (checklist)
-- Happy path behavior
-- Boundary conditions (empty/0/null/large)
-- Error handling and user-visible messages
-- Security-sensitive checks (authz, input validation) when relevant
+- TypeScript unit and integration tests: `vitest`.
+- Frontend interaction tests: Playwright or equivalent when UI stabilizes.
+- Contract/schema assertions should reuse the same TypeScript definitions shipped in `packages/shared`.
+- Workspace linting and formatting should run through ESLint and Prettier, with Husky and lint-staged enforcing fast checks on changed files.
 
-## Boundary validation
-- Boundary parsing should be exercised in tests, not just implicitly by runtime paths.
-- Add explicit tests for invalid inputs, missing fields, and type mismatches at boundaries.
-- If runtime validation is automatic (e.g., schema parsing), still add tests that prove the validator is wired correctly.
+## What to test
 
-## Manual UI validation (Chrome DevTools)
-Use Chrome DevTools to manually validate UI changes when relevant:
-- Open the app in a fresh worktree instance.
-- Use DevTools to inspect DOM, console, and network behavior.
-- Capture a “before” snapshot (DOM + screenshot) for the critical flow.
-- Trigger the UI path and capture an “after” snapshot.
-- Verify there are no console errors and no failed network requests.
+- Workbook ingestion happy path and malformed workbook handling.
+- Pipeline generation and execution on representative workbook structures.
+- Natural-language request validation and SQL generation safety checks.
+- Query execution logging with latency, cost, and failure metadata.
+- Query clustering thresholds and optimization trigger decisions.
+- Pipeline rollback or revision handling without mutating the source database.
+
+## Manual UI validation
+
+Use Chrome DevTools and the workflow in [docs/UI_VALIDATION.md](UI_VALIDATION.md) for upload and query UX changes.

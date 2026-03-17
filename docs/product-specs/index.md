@@ -1,8 +1,9 @@
 # Product Specs
 
-Last reviewed: 2026-02-23
+Last reviewed: 2026-03-17
 
 Entry point for product specifications.
 
 ## Index
-- [New user onboarding](new-user-onboarding.md)
+
+- [Upload to Query Learning Loop](new-user-onboarding.md)

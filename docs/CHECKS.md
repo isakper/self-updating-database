@@ -1,46 +1,54 @@
 # Checks
 
-Last reviewed: 2026-02-23
-
+Last reviewed: 2026-03-17
 
 This doc defines the standard local validation loop before opening a PR.
 
-## Canonical commands (fill these in per repo)
-Document the *actual* commands for this repo here, then keep them stable.
+## Current state
 
-- Format:
-- Lint: `scripts/lint-architecture`
-- Typecheck:
-- Unit tests:
-- Build:
-- Run locally:
+- The repo is TypeScript-only.
+- The repo now has a Node-based workspace foundation with `pnpm`, TypeScript, ESLint, Prettier, Vitest, Husky, and lint-staged configured at the root.
+- App implementation is still early, so some commands are scaffolding-oriented until real app runtimes land.
 
-## Suggested sequence (before commit / PR)
+## Canonical commands
+
+These are the current workspace-level commands and should stay stable as the apps grow.
+
+- Format: `pnpm format`
+- Lint: `pnpm lint`
+- Typecheck: `pnpm typecheck`
+- Unit tests: `pnpm test`
+- Build: `pnpm build`
+- Run locally: `pnpm dev`
+
+## Suggested sequence
+
 1. Format
-2. Lint + typecheck
+2. Lint and typecheck
 3. Unit tests
 4. Build
-5. Run locally + manual checks (below)
+5. Run locally and complete manual checks
 
 ## Run locally
-Add the standard “run it” command and required env vars/secrets setup.
 
-- Command:
-- Required env:
-- Seed data (if any):
-- Common troubleshooting:
+As app runtimes land, document the exact workspace commands and environment variables here.
 
-## Manual checks (examples)
-Keep this short and focused on high-signal flows.
+Expected local requirements:
 
-- App starts cleanly (no obvious errors in logs/console)
-- UI validation loop completed (capture screenshot, DOM snapshot, console excerpt, network failures). See `docs/UI_VALIDATION.md`.
-- One primary user flow end-to-end
-- One negative path (invalid input / permission denied / missing resource)
-- Performance sanity (page/API responds; no accidental N+1 obviousness)
-- Observability sanity (key logs/metrics emitted; no secret leakage)
-- Observability: confirm a key metric moves during a core flow
-- Observability: confirm a trace exists for a core flow
+- Per-worktree port configuration
+- Local data directories for source DB, optimized DB, and logs
+- Test workbook fixtures for ingestion and query verification
 
-## Optional: single entrypoint script
-If you want a one-liner, keep it as a convenience (not the source of truth) and ensure it matches this doc.
+## Manual checks
+
+- Upload a representative workbook and verify sheet discovery is correct.
+- Confirm the initial optimized query database build succeeds.
+- Run one natural-language query end to end.
+- Inspect generated SQL and verify it targets the optimized query database.
+- Verify a query execution log is stored with latency and cost-oriented metadata.
+- Verify the UI validation loop was completed for upload or query-facing changes.
+- Verify observability signals exist for one query and one background job.
+
+## Optional single entrypoint
+
+If a one-liner script is added later, keep it as a convenience only and ensure it matches this document.

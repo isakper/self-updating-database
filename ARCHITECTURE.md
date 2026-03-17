@@ -1,112 +1,138 @@
 # Architecture
 
-Last reviewed: 2026-02-23
+Last reviewed: 2026-03-17
 
+This document is the system-of-record for how the self-updating database is structured.
 
-This document is the system-of-record for how the codebase is structured.
+## Product architecture summary
 
-## Goals
-- Keep the architecture legible to both humans and agents.
-- Encode invariants as checks (tests, linters, CI) when possible.
-- Preserve flexibility across downstream repos by using a config-driven structure linter.
+- Users upload Excel workbooks with multiple sheets.
+- The ingestion system converts workbook sheets into an immutable source database.
+- Codex CLI analyzes imported structure and writes a transformation pipeline stored in the platform database.
+- The transformation pipeline builds a separate optimized query database for interactive querying.
+- Users submit natural-language questions in the web app.
+- The backend translates the request into SQL against the optimized query database, executes it, and logs execution metadata.
+- Logged queries are clustered by similarity, frequency, and cost.
+- Expensive, high-frequency clusters trigger Codex CLI to revise the transformation pipeline so future queries become cheaper and easier.
 
-## Architecture Linting
-This repo ships with a structural linter that enforces layer and domain boundaries.
+## Monorepo shape
 
-- Config: `architecture-lint.toml`
-- Entrypoint: `scripts/lint-architecture`
-- Hook: runs via pre-commit (local) and can be wired to CI.
+### Applications
 
-## How To Use
-- Start here for a 5-minute overview.
-- Put long-form details in `docs/` and link from here.
+- `apps/web`: TypeScript frontend for workbook upload, query workspace, query history, and optimization insights.
+- `apps/api`: TypeScript backend for ingestion orchestration, natural-language query execution, logging, clustering, and optimization jobs.
 
-## Domain Layering Model (Template Default)
+### Shared packages
 
-### Terminology
-- Business domain: a user-facing area of the product (e.g. “App Settings”, “Billing”, “Onboarding”).
-- Layer: a conceptual slice within a domain with clear responsibility and dependency rules.
-- Providers: the explicit boundary for cross-cutting concerns (auth, connectors, telemetry, feature flags, etc.).
+- `packages/shared`: shared TypeScript types, schemas, and API contracts.
+- `packages/pipeline-sdk`: pipeline step definitions, validators, and execution helpers.
+- `packages/agent-orchestrator`: adapter boundary for invoking Codex CLI and storing prompts, outputs, and audit records.
+- `packages/database-core`: ingestion logic, schema metadata, source-to-optimized transforms, clustering services, and optimization services.
 
-### The rule (v1)
-Within a business domain, code may only depend “forward” through this fixed sequence:
+### Documentation
 
-`Types → Config → Repo → Service → Runtime → UI`
+- `docs/`: product, operating, and decision docs.
 
-Cross-cutting concerns enter through a single explicit interface:
+## Core data model
 
-`Providers → Service → Runtime → UI`
+### Source database
 
-Everything else is disallowed.
+- Created from uploaded workbook sheets.
+- Treated as immutable after import except for append-only metadata and provenance records.
+- Preserves raw structure so pipeline changes can rebuild derived artifacts safely.
 
-### Layer responsibilities (quick)
-- Types: data shapes + pure helpers. No IO.
-- Config: domain configuration derived from env/flags/defaults. No DB/network.
-- Repo: data access boundary (DB/remote). Returns Types.
-- Service: use-cases and business rules. Orchestrates Repo + Providers.
-- Runtime: wiring/composition (construct implementations, inject Providers).
-- UI: presentation layer (calls Service or API; no direct Repo).
+### Transformation pipeline
 
-### Allowed edges (examples)
-- Service imports Types/Config/Repo/Providers interfaces.
-- Repo imports Types/Config (not Service/UI).
-- UI imports Service (or API client) and Types.
-- Runtime imports Service/Repo/Providers implementations and wires them together.
+- Authored by Codex CLI and stored as versioned steps.
+- Converts imported source data into query-friendly structures.
+- Can be revised as the system learns which query patterns matter most.
 
-### Disallowed edges (examples)
-- UI importing Repo directly.
-- Repo importing Service.
-- Service importing UI.
-- Domain code importing cross-cutting singletons directly (must go through Providers).
+### Optimized query database
 
-## Providers (Cross-Cutting Boundary)
-Providers are the *only* permitted entry point for cross-cutting concerns inside domain code.
+- Separate derived database used for end-user querying.
+- Rebuilt or incrementally refreshed from the current pipeline.
+- Owns denormalized tables, materialized views, helper dimensions, and other query-acceleration artifacts.
 
-- Providers are interfaces only (types + contracts), not concrete implementations.
-- Implementations live in Runtime (or infra packages) and are injected into Services.
-- Domain code must never reach for global singletons, environment globals, or system clients directly.
+### Query telemetry entities
 
-## Taste Invariants (v1)
-These are deliberately small. If the list grows, move it to a dedicated doc under `docs/` and link here.
+- `NaturalLanguageQueryRequest`
+- `GeneratedSQLRecord`
+- `QueryExecutionLog`
+- `QueryCluster`
+- `OptimizationRevision`
 
-- Layering rule enforced (no backward edges across `Types → Config → Repo → Service → Runtime → UI`).
-- Providers are the only cross-cutting boundary; no hidden globals in domain code.
-- Boundary data is parsed/validated at entry points (API, job, queue, CLI, webhook).
-- Structured logging is used (fields + correlation), with a baseline format documented.
+## Backend domain layering
 
-## Adding A New Domain (Checklist)
-This template does **not** force a single folder layout across all downstream repos. The *default* layout is:
+Within backend packages and domains, code should depend only forward through:
 
-- `src/domains/<domain>/types/`
-- `src/domains/<domain>/config/`
-- `src/domains/<domain>/repo/`
-- `src/domains/<domain>/service/`
-- `src/domains/<domain>/runtime/`
-- `src/domains/<domain>/ui/`
-- `src/domains/<domain>/providers/`
+`types -> schemas -> repo -> service -> jobs -> api`
 
-Checklist:
-1. Create the domain folder and layer directories.
-2. Define Types first (avoid IO dependencies).
-3. Add Config and Repo boundaries next.
-4. Implement Services that orchestrate Repo + Providers.
-5. Wire implementations in Runtime and expose UI usage points.
-6. Add Providers interfaces for cross-cutting needs.
-7. Update the architecture lint config to map your layout (see below).
+Cross-cutting integrations enter through explicit provider or adapter boundaries.
 
-## Architecture Lint (Template Stub + Contract)
-This template ships with a stub architecture linter entrypoint:
+### Layer responsibilities
 
-- `scripts/lint-architecture`
+- `types`: TypeScript domain types and pure helpers.
+- `schemas`: parsing and validation schemas at boundaries.
+- `repo`: data access for source DB, optimized DB, pipeline storage, and telemetry tables.
+- `service`: orchestration and business rules.
+- `jobs`: background workflows such as ingestion, clustering, and optimization evaluation.
+- `api`: HTTP handlers and transport mapping for the frontend or operator tools.
 
-By default it *does not* enforce rules until configured. Downstream repos should either:
-- Replace the script with a stack-specific linter, or
-- Add a config file and an adapter that enforces edges per the contract.
+### Providers and adapters
 
-See `docs/references/architecture-lint.md` for the contract, config file location, and remediation guidance.
+- Database clients, Codex CLI invocation, storage, and observability are exposed through explicit interfaces.
+- Domain code does not directly reach for global clients or process-wide singletons.
+- Runtime wiring lives at the application boundary.
 
-## Runtime Environments
-Document runtime environments (dev/staging/prod) and any environment-specific wiring here.
+## Core backend domains
+
+- `ingestion`: workbook parsing, schema discovery, source DB load, provenance.
+- `pipeline`: pipeline definitions, versioning, execution, and rebuild control.
+- `query`: natural-language request handling, SQL generation, execution, and result formatting.
+- `telemetry`: query execution logs, cost signals, latency signals, and audit records.
+- `clustering`: grouping similar query logs and calculating aggregate complexity/value.
+- `optimization`: deciding when to invoke Codex CLI and how pipeline revisions are reviewed or applied.
+
+## Frontend areas
+
+- Upload workspace: file selection, workbook inspection, import status, and ingestion summaries.
+- Query workspace: natural-language input, generated SQL preview, results table, and query timing/cost hints.
+- Query history and diagnostics: recent runs, failures, generated SQL, and trace identifiers.
+- Optimization insights admin view: cluster summaries, pipeline revision proposals, and rebuild status.
+
+## System flow
+
+1. User uploads an Excel workbook in `apps/web`.
+2. `apps/api` parses sheets, records provenance, and loads an immutable source database.
+3. Codex CLI is invoked through `packages/agent-orchestrator` to propose an initial transformation pipeline.
+4. `packages/pipeline-sdk` and `packages/database-core` execute the pipeline and build the optimized query database.
+5. User sends a natural-language query through the web app.
+6. Backend validates the request, generates SQL, executes it against the optimized query database, and returns results.
+7. Backend stores a query execution log with prompt, SQL, latency, cost signals, and outcome.
+8. Background clustering jobs group similar queries and track high-frequency expensive clusters.
+9. Optimization jobs invoke Codex CLI for pipeline revisions when a cluster crosses the configured threshold.
+10. Approved revisions update the stored pipeline and rebuild the optimized query database without mutating the source database.
+
+## Invariants
+
+- Source data remains reproducible from the original workbook import.
+- Optimizations never destructively rewrite the source database.
+- Every executed natural-language query produces a traceable query log.
+- Pipeline revisions are versioned and auditable.
+- Shared contracts are defined once in TypeScript and consumed by both backend and frontend.
+- Boundary inputs are validated before use.
+- Observability uses structured logs, metrics, and traces with correlation IDs.
+
+## Architecture linting direction
+
+This repo is TypeScript-only. When structural enforcement is added, use TypeScript-native tooling such as ESLint custom rules or `dependency-cruiser` aligned to the layering described here.
+
+## Runtime environments
+
+- Local: TypeScript apps run side-by-side with per-worktree ports and local data directories.
+- Staging: representative workbook imports, clustering behavior, and pipeline rebuilds exercised before production rollout.
+- Production: source DB, optimized DB, pipeline store, and query telemetry separated with auditable rebuild workflows.
 
 ## Observability
-Document baseline logging format, metrics, and traces here, plus any required correlation fields.
+
+See [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) for required logs, metrics, traces, and cluster/optimization telemetry.
