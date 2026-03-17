@@ -1,9 +1,8 @@
 # Plans
 
-Last reviewed: 2026-02-23
+Last reviewed: 2026-03-17
 
-
-How execution plans are written and tracked.
+How execution plans are written and tracked for the self-updating database.
 
 ## Where things live
 - Active plans: `docs/exec-plans/active/`
@@ -37,13 +36,15 @@ Updated: YYYY-MM-DD
 - <what to do if blocked>
 ```
 
-## Agent-oriented guidance
-Each plan is written to be followed by an agent without ambiguity.
+## What good plans look like here
+- State whether the plan touches source DB ingestion, optimized DB rebuilds, query execution, clustering, or optimization.
+- Call out invariants explicitly, especially source-database immutability and pipeline auditability.
+- Make it clear whether a change is TypeScript product work or transitional repo-maintenance work.
+- Include validation that proves the upload-to-query loop still works.
 
-- Objective: the exact deliverable and success criteria.
-- Updated: last update date for the plan.
-- Non-goals: explicit guardrails for what must not change.
-- Milestones: small, sequential, checkable steps with clear outputs.
-- Risks: likely failure modes and what to do if blocked.
-- Rollout: how to stage changes safely (small diffs, flags if applicable).
-- Validation: concrete commands or checks to verify correctness.
+## Example plan themes
+- Introduce workbook ingestion and provenance tracking.
+- Add the first stored transformation pipeline format.
+- Implement natural-language query execution with logged SQL output.
+- Add query clustering and optimization trigger thresholds.
+- Migrate transitional Python doc tooling into TypeScript-native workspace tooling.

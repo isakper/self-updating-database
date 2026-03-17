@@ -1,28 +1,22 @@
 # Doc Gardening Process
 
-Last reviewed: 2026-02-23
+Last reviewed: 2026-03-17
 
 ## Goal
-Keep high-drift docs fresh and cross-links accurate with a recurring, low-friction maintenance loop.
+Keep product docs fresh and aligned with the evolving TypeScript monorepo and self-updating database workflow.
 
 ## Signals
 A doc is considered stale when any of the following is true:
-- Its `Last reviewed` date is older than the threshold in `docs/references/doc-integrity.md`.
+- Its `Last reviewed` date is older than the threshold in [doc-integrity.md](doc-integrity.md).
 - It is missing a required freshness marker.
-- It contains broken relative links (reported by doc-lint).
+- It uses outdated product terms or template wording.
+- It contains broken relative links.
 
 ## Output
 Doc-gardening produces a report file:
 - `docs/reports/doc-gardening-report.md`
 
-## PR flow
-- A scheduled workflow runs `scripts/doc_gardening.py`.
-- If the report changes, the workflow opens a PR labeled `doc-gardening`.
-- The PR should include:
-  - Updated report file
-  - Suggested fixes or assignments in the report
-
 ## Review expectations
-- Validate that the stale findings are accurate.
-- Convert high-priority items into actionable issues or doc updates.
-- Close the PR once follow-up owners are assigned (or fix inline).
+- Confirm that docs still describe the immutable source database and derived optimized query database accurately.
+- Confirm TypeScript remains the stated implementation language for frontend and backend product code.
+- Convert high-priority drift into doc updates or implementation follow-ups.

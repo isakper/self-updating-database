@@ -1,75 +1,62 @@
 # Observability
 
-This document defines an agent-friendly local workflow for logs, metrics, and traces.
+Last reviewed: 2026-03-17
+
+This document defines the observability model for the self-updating database.
 
 ## Goals
-- Make runtime behavior legible to agents.
-- Keep observability isolated per worktree.
-- Prefer simple, local-first tooling.
+- Make ingestion, query execution, clustering, and optimization behavior legible to humans and agents.
+- Keep local observability isolated per worktree.
+- Preserve correlation from user action to backend job to Codex CLI invocation.
 
-## Local workflow (per worktree)
-1. Start the app for this worktree.
-2. Start the local observability stack for this worktree.
-3. Run a core flow.
-4. Inspect logs, metrics, and traces for the flow.
-5. Tear down the stack when done.
-
-## Required fields (v1)
-### Logs
+## Required logs
 - `service`
 - `env`
-- `version` (or git SHA)
-- request correlation id (`request_id` or `trace_id`)
+- `version`
+- `trace_id` or `request_id`
+- `pipeline_version`
+- `source_dataset_id`
+- `optimized_dataset_id` when applicable
+- `query_log_id` when applicable
+- `job_type` for background work
 
-### Metrics
-- request duration histogram (or equivalent)
-- error counter (by route/status)
-- process uptime (if applicable)
+## Required metrics
+- workbook import count and failure count
+- time from upload accepted to optimized database ready
+- natural-language query latency
+- query execution failure count
+- query cluster count by threshold band
+- optimization trigger count
+- optimized database rebuild duration
 
-### Traces
-- spans for critical user journeys
-- `service`, `env`, `version` (or git SHA) on spans
+## Required traces
+- workbook upload to ingestion completion
+- initial pipeline generation
+- optimized database rebuild
+- natural-language query request to SQL execution
+- clustering job
+- optimization recommendation or revision flow
 
-## Default local stack (required by template)
-This template follows the standard agent diagram:
-- App emits logs (HTTP), OTLP metrics, and OTLP traces.
-- Vector fans out locally to:
-  - VictoriaLogs
-  - VictoriaMetrics
-  - VictoriaTraces
+## Core observability questions
+- Why did a workbook import fail?
+- Which generated SQL was executed for a given user query?
+- Which query clusters are becoming expensive enough to optimize?
+- Which pipeline version produced the current optimized query database?
+- Which Codex CLI invocation produced a given optimization revision?
 
-Downstream repos should provide a `docker-compose.yml` under the worktree with:
-- Vector + VictoriaLogs + VictoriaMetrics + VictoriaTraces
-- Ports assigned per worktree to avoid conflicts
+## Local workflow
+1. Start the TypeScript apps for the current worktree.
+2. Start the local observability stack if configured.
+3. Import a workbook.
+4. Run at least one natural-language query.
+5. Inspect logs, metrics, and traces for import, query, and any background jobs.
 
-## Query examples (templates)
-Replace placeholders like `<service>` and `<route>`.
-
-### Logs (VictoriaLogs / LogQL)
-- Errors for a service:
-  - `{service="<service>"} |~ "error|exception|fatal"`
-- Requests for a route:
-  - `{service="<service>"} |~ "<route>"`
-
-### Metrics (VictoriaMetrics / PromQL)
-- p95 latency:
-  - `histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{service="<service>"}[5m])) by (le))`
-- Error rate:
-  - `sum(rate(http_requests_total{service="<service>",status=~"5.."}[5m]))`
-
-### Traces (VictoriaTraces / TraceQL)
-- Filter by service:
-  - `service="<service>"`
-- Filter by route:
-  - `http.route="<route>"`
-
-## Performance budgets (starter)
-Set budgets per repo once real data is available.
-- App startup: < 800ms
-- P95 latency for key route: < 300ms
-- Error rate: < 1%
+## Performance starter budgets
+- Upload accepted to import finished: < 60s for representative local fixtures
+- First query p95 latency: < 5s in the POC
+- Optimized database rebuild for representative fixtures: < 5m locally
 
 ## Troubleshooting
-- Missing logs: verify logger is structured and includes required fields.
-- Missing metrics: confirm middleware/exporter wiring.
-- Missing traces: confirm spans are created for the request handler and downstream calls.
+- Missing query logs: verify the query service writes `QueryExecutionLog` before response completion.
+- Missing optimization traces: verify background jobs propagate trace context into Codex CLI orchestration.
+- Missing rebuild metrics: verify pipeline execution emits job lifecycle events.

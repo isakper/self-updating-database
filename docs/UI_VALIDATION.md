@@ -1,41 +1,36 @@
 # UI Validation Loop
 
-This doc defines the standard UI validation loop and what “clean” means for agent-driven validation.
+This doc defines the standard UI validation loop for the TypeScript web app.
 
-## When To Use
-- Any UI-facing change.
-- Any bug reproduction or verification via CDP/MCP.
+## When to use
+- Any upload, query workspace, history, or optimization insights UI change.
+- Any bug reproduction or verification via DevTools or MCP tooling.
 
-## Required Artifacts
-Capture and store these for each validation run:
-- Screenshot (full page or viewport).
-- DOM snapshot (or HTML dump).
-- Console log excerpt for the interaction window.
-- Network failures (failed requests + status codes).
+## Required artifacts
+- Screenshot
+- DOM snapshot or HTML dump
+- Console log excerpt
+- Network failures
 
 Recommended storage location: `.artifacts/ui/` within the active worktree.
 
-## Validation Loop
-1. Start the app with per-worktree ports and data dirs (see `docs/CHROME_DEVTOOLS_MCP.md`).
-2. Connect MCP to CDP and open `TARGET_URL`.
-3. Capture a **before** snapshot set.
-4. Reproduce the issue or exercise the target flow.
-5. Capture an **after** snapshot set.
-6. Apply the fix.
-7. Re-run steps 2-5 and verify the issue is resolved.
+## Validation loop
+1. Start the web app and API for the current worktree.
+2. Open the deterministic route for the target workflow.
+3. Capture a before snapshot set.
+4. Run the target flow, such as workbook upload or natural-language query execution.
+5. Capture an after snapshot set.
+6. Verify query results, status states, and diagnostics surfaces.
 
-## Definition Of “Clean”
-A run is considered clean when all of the following are true:
-- No new console errors were introduced by the change.
+## Definition of clean
+- No new console errors were introduced.
 - No new failed network requests appear.
-- The UI matches expected state in the screenshots.
-- The DOM snapshot reflects the intended structure (no missing critical nodes).
+- The UI reflects the intended upload or query state.
+- Generated SQL and execution metadata appear when expected.
 
-## Critical User Journeys (Template)
-List 3-5 critical flows that agents can reference. Replace these with real flows when the app exists.
-
-- Launch app and load home page.
-- Navigate to the primary feature route.
-- Perform the core write action (create/update/save).
-- Perform a negative path (invalid input / permission denied / missing resource).
-- Sign out / session expiration (if applicable).
+## Critical user journeys
+- Upload a workbook and verify sheet discovery.
+- Wait for optimized query database readiness.
+- Run a natural-language query and inspect generated SQL.
+- View query history for the just-executed query.
+- Inspect optimization insights after cluster data exists.

@@ -1,8 +1,6 @@
 # Doc Gardening Report
 
-Updated: 2026-02-23
-
-Last updated: 2026-02-23
+Last updated: 2026-03-17
 
 ## Stale docs
 - None
