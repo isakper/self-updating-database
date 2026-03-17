@@ -9,7 +9,9 @@ describe("shared contracts", () => {
       sourceDatasetId: "dataset_123"
     };
 
-    expect(request.prompt).toContain("revenue");
+    expect(request).toStrictEqual({
+      prompt: "Show total revenue by region",
+      sourceDatasetId: "dataset_123"
+    });
   });
 });
-
