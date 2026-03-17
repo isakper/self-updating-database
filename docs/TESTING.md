@@ -30,6 +30,7 @@ Last reviewed: 2026-03-17
 - TypeScript unit and integration tests: `vitest`.
 - Frontend interaction tests: Playwright or equivalent when UI stabilizes.
 - Contract/schema assertions should reuse the same TypeScript definitions shipped in `packages/shared`.
+- Workspace linting and formatting should run through ESLint and Prettier, with Husky and lint-staged enforcing fast checks on changed files.
 
 ## What to test
 - Workbook ingestion happy path and malformed workbook handling.

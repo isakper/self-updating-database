@@ -6,11 +6,11 @@ This doc defines the standard local validation loop before opening a PR.
 
 ## Current state
 - The repo is TypeScript-only.
-- The intended application implementation is a TypeScript monorepo with backend and frontend apps.
-- Until app tooling exists, keep this document explicit about what is implemented versus what is planned.
+- The repo now has a Node-based workspace foundation with `pnpm`, TypeScript, ESLint, Prettier, Vitest, Husky, and lint-staged configured at the root.
+- App implementation is still early, so some commands are scaffolding-oriented until real app runtimes land.
 
 ## Canonical commands
-Document the actual commands here once the TypeScript workspace exists and keep them stable.
+These are the current workspace-level commands and should stay stable as the apps grow.
 
 - Format: `pnpm format`
 - Lint: `pnpm lint`
@@ -27,7 +27,7 @@ Document the actual commands here once the TypeScript workspace exists and keep 
 5. Run locally and complete manual checks
 
 ## Run locally
-When the TypeScript apps land, document the exact workspace commands and environment variables here.
+As app runtimes land, document the exact workspace commands and environment variables here.
 
 Expected local requirements:
 - Per-worktree port configuration
