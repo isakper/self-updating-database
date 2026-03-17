@@ -1,0 +1,42 @@
+# Architecture lint configuration (TOML).
+# Fill in domains/layers to enable checks.
+
+version = 1
+
+# Define each domain root.
+# Example:
+# [[domains]]
+# name = "orders"
+# root = "src/orders"
+
+# Define layer rules. Imports are allowed only to listed layers (plus same-layer).
+# Example:
+# [[layers]]
+# name = "api"
+# allow = ["service", "model"]
+#
+# [[layers]]
+# name = "service"
+# allow = ["model"]
+#
+# [[layers]]
+# name = "model"
+# allow = []
+#
+# [[layers]]
+# name = "infra"
+# allow = ["model"]
+
+# Cross-domain imports must target one of these paths (relative to target domain root).
+# Example: ["public.py", "ports/**"]
+allow_cross_domain = ["public.py", "ports/**"]
+
+# Glob patterns (repo-relative) to exclude from linting.
+exclude = [
+  "**/.venv/**",
+  "**/__pycache__/**",
+  "**/tests/**",
+  "**/test_*.py",
+  "**/*_test.py",
+  "**/migrations/**",
+]

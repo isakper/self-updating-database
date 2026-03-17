@@ -1,0 +1,207 @@
+#!/usr/bin/env python3
+
+from __future__ import annotations
+
+import ast
+import fnmatch
+import os
+import sys
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+CONFIG_PATH = REPO_ROOT / "architecture-lint.toml"
+
+
+def _load_config() -> Dict[str, Any]:
+    if not CONFIG_PATH.exists():
+        print(f"[lint-architecture] No config at {CONFIG_PATH}; skipping.")
+        return {}
+    try:
+        import tomllib  # Python 3.11+
+    except Exception as exc:  # pragma: no cover - environment issue
+        print(f"[lint-architecture] tomllib unavailable: {exc}")
+        return {}
+    with CONFIG_PATH.open("rb") as handle:
+        return tomllib.load(handle)
+
+
+def _posix(path: Path) -> str:
+    return path.as_posix()
+
+
+def _matches_any(path: str, patterns: Iterable[str]) -> bool:
+    return any(fnmatch.fnmatch(path, pat) for pat in patterns)
+
+
+def _iter_python_files(roots: Iterable[Path], exclude: Iterable[str]) -> Iterable[Path]:
+    for root in roots:
+        if not root.exists():
+            continue
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirpath_path = Path(dirpath)
+            rel_dir = _posix(dirpath_path.relative_to(REPO_ROOT))
+            if _matches_any(rel_dir + "/", exclude):
+                dirnames[:] = []
+                continue
+            for filename in filenames:
+                if not filename.endswith(".py"):
+                    continue
+                path = dirpath_path / filename
+                rel = _posix(path.relative_to(REPO_ROOT))
+                if _matches_any(rel, exclude):
+                    continue
+                yield path
+
+
+def _module_for_path(path: Path) -> List[str]:
+    rel = path.relative_to(REPO_ROOT)
+    if rel.name == "__init__.py":
+        rel = rel.parent
+    else:
+        rel = rel.with_suffix("")
+    return list(rel.parts)
+
+
+def _resolve_module_to_path(module: str) -> Optional[Path]:
+    candidate = REPO_ROOT / module.replace(".", "/")
+    file_path = candidate.with_suffix(".py")
+    if file_path.exists():
+        return file_path
+    init_path = candidate / "__init__.py"
+    if init_path.exists():
+        return init_path
+    return None
+
+
+def _resolve_import(node: ast.AST, file_module: List[str]) -> List[str]:
+    results: List[str] = []
+    if isinstance(node, ast.Import):
+        for alias in node.names:
+            results.append(alias.name)
+        return results
+    if isinstance(node, ast.ImportFrom):
+        base = file_module[:]
+        if node.level:
+            base = base[: -node.level]
+        if node.module:
+            module = ".".join(base + node.module.split("."))
+            results.append(module)
+        else:
+            for alias in node.names:
+                results.append(".".join(base + [alias.name]))
+        return results
+    return results
+
+
+def _find_domain(
+    domains: List[Dict[str, Any]], path: Path
+) -> Optional[Tuple[str, Path]]:
+    for domain in domains:
+        root = REPO_ROOT / domain["root"]
+        try:
+            path.relative_to(root)
+        except ValueError:
+            continue
+        return domain["name"], root
+    return None
+
+
+def _layer_for_path(domain_root: Path, path: Path) -> str:
+    rel = path.relative_to(domain_root)
+    if not rel.parts:
+        return "root"
+    return rel.parts[0]
+
+
+def _check_config(
+    config: Dict[str, Any],
+) -> Tuple[List[Dict[str, Any]], Dict[str, Set[str]], List[str], List[str]]:
+    domains = config.get("domains", [])
+    layers_list = config.get("layers", [])
+    allow_cross_domain = config.get("allow_cross_domain", [])
+    exclude = config.get("exclude", [])
+    layers: Dict[str, Set[str]] = {}
+    for layer in layers_list:
+        name = layer.get("name")
+        allow = layer.get("allow", [])
+        if not name:
+            continue
+        layers[name] = set(allow)
+    return domains, layers, allow_cross_domain, exclude
+
+
+def main() -> int:
+    config = _load_config()
+    if not config:
+        return 0
+    domains, layers, allow_cross_domain, exclude = _check_config(config)
+    if not domains:
+        print("[lint-architecture] No domains configured; skipping.")
+        return 0
+
+    domain_roots = [REPO_ROOT / d["root"] for d in domains]
+    errors: List[str] = []
+
+    for file_path in _iter_python_files(domain_roots, exclude):
+        file_module = _module_for_path(file_path)
+        source_domain_info = _find_domain(domains, file_path)
+        if not source_domain_info:
+            continue
+        source_domain, source_root = source_domain_info
+        source_layer = _layer_for_path(source_root, file_path)
+        if source_layer not in layers:
+            errors.append(
+                f"{file_path}: unknown layer '{source_layer}' for domain '{source_domain}'"
+            )
+            continue
+        try:
+            tree = ast.parse(file_path.read_text())
+        except SyntaxError as exc:
+            errors.append(f"{file_path}: syntax error: {exc}")
+            continue
+
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.Import, ast.ImportFrom)):
+                continue
+            for module in _resolve_import(node, file_module):
+                target_path = _resolve_module_to_path(module)
+                if not target_path:
+                    continue
+                target_domain_info = _find_domain(domains, target_path)
+                if not target_domain_info:
+                    continue
+                target_domain, target_root = target_domain_info
+                target_layer = _layer_for_path(target_root, target_path)
+                if target_layer not in layers:
+                    errors.append(
+                        f"{file_path}: import {module} targets unknown layer "
+                        f"'{target_layer}' in domain '{target_domain}'"
+                    )
+                    continue
+                if target_domain != source_domain:
+                    rel = _posix(target_path.relative_to(target_root))
+                    if not _matches_any(rel, allow_cross_domain):
+                        errors.append(
+                            f"{file_path}: cross-domain import {source_domain} -> "
+                            f"{target_domain} ({rel}) is not allowed"
+                        )
+                    continue
+                allowed = layers.get(source_layer, set())
+                if target_layer != source_layer and target_layer not in allowed:
+                    errors.append(
+                        f"{file_path}: layer '{source_layer}' cannot import "
+                        f"layer '{target_layer}' via {module}"
+                    )
+
+    if errors:
+        print("[lint-architecture] violations:")
+        for err in errors:
+            print(f"- {err}")
+        return 1
+    print("[lint-architecture] OK")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,2 @@
+Notes for agents:
+- Nixpacks-related conventions, buildpacks, and deploy assumptions go here.

@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+
+run_py_tests=false
+if [[ -f "pyproject.toml" ]]; then
+  if [[ -d "tests" ]] || find . -name "test_*.py" -o -name "*_test.py" | grep -q .; then
+    run_py_tests=true
+  fi
+fi
+
+if [[ "$run_py_tests" == "true" ]]; then
+  if command -v poetry >/dev/null 2>&1; then
+    poetry_cmd="poetry"
+  else
+    poetry_cmd="python3 -m poetry"
+  fi
+  if ! $poetry_cmd --version >/dev/null 2>&1; then
+    echo "[ci-test-local] poetry not installed or not on PATH; install it to run Python tests."
+    exit 1
+  fi
+  $poetry_cmd install --no-root
+  $poetry_cmd run pytest
+else
+  echo "[ci-test-local] No Python tests found; skipping."
+fi
+
+run_node_tests=false
+if [[ -f "package.json" ]]; then
+  if find . \
+    -name "*.test.ts" -o -name "*.test.tsx" -o -name "*.test.js" -o -name "*.test.jsx" \
+    -o -name "*.spec.ts" -o -name "*.spec.tsx" -o -name "*.spec.js" -o -name "*.spec.jsx" \
+    | grep -q .; then
+    run_node_tests=true
+  fi
+fi
+
+if [[ "$run_node_tests" == "true" ]]; then
+  if ! command -v npm >/dev/null 2>&1; then
+    echo "[ci-test-local] npm not installed; install it to run Node tests."
+    exit 1
+  fi
+  if [[ -f "package-lock.json" ]]; then
+    npm ci
+  else
+    npm install
+  fi
+  npm test --silent
+else
+  echo "[ci-test-local] No Node tests found; skipping."
+fi

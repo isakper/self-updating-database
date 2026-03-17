@@ -1,0 +1,30 @@
+name: pr-checklist
+
+on:
+  pull_request:
+
+jobs:
+  checklist:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Validate checklist
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+            });
+            const body = pr.data.body || "";
+            const boxes = body.match(/- \[[ xX]\]/g) || [];
+            if (boxes.length === 0) {
+              core.setFailed("PR body has no checklist items.");
+              return;
+            }
+            const unchecked = body.match(/- \[ \]/g) || [];
+            if (unchecked.length > 0) {
+              core.setFailed(`PR body has ${unchecked.length} unchecked checklist items.`);
+            }
