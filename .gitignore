@@ -30,6 +30,8 @@ yarn-error.log*
 .logs/
 .artifacts/
 .chrome/
+.playwright-cli/
+output/
 
 # Temporary files
 tmp/

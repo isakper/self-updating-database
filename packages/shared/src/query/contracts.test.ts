@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import type { NaturalLanguageQueryRequest } from "./index.js";
+import type { NaturalLanguageQueryRequest } from "./contracts.js";
 
-describe("shared contracts", () => {
+describe("query contracts", () => {
   it("defines the initial natural language query request shape", () => {
     const request: NaturalLanguageQueryRequest = {
       prompt: "Show total revenue by region",
