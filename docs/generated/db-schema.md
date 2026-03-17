@@ -6,6 +6,7 @@ Last generated: 2026-03-17
 ## Schema families
 
 ### Source database
+
 - `source_datasets`
 - `source_tables`
 - `source_columns`
@@ -13,18 +14,21 @@ Last generated: 2026-03-17
 - provenance records tying rows and tables back to workbook sheets
 
 ### Pipeline storage
+
 - `transformation_pipelines`
 - `pipeline_versions`
 - `pipeline_steps`
 - `pipeline_runs`
 
 ### Optimized query database
+
 - query-oriented derived tables
 - denormalized helper tables
 - materialized views or equivalent acceleration structures
 - rebuild metadata tables
 
 ### Query telemetry
+
 - `natural_language_query_requests`
 - `generated_sql_records`
 - `query_execution_logs`
@@ -32,6 +36,7 @@ Last generated: 2026-03-17
 - `optimization_revisions`
 
 ## Notes
+
 - The source database is immutable after import.
 - The optimized query database is derived from source data plus the active pipeline version.
 - Keep human-authored explanations in non-generated docs and use this file for generated or generated-style schema reference only.

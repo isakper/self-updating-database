@@ -5,11 +5,13 @@ Last reviewed: 2026-03-17
 This document defines the observability model for the self-updating database.
 
 ## Goals
+
 - Make ingestion, query execution, clustering, and optimization behavior legible to humans and agents.
 - Keep local observability isolated per worktree.
 - Preserve correlation from user action to backend job to Codex CLI invocation.
 
 ## Required logs
+
 - `service`
 - `env`
 - `version`
@@ -21,6 +23,7 @@ This document defines the observability model for the self-updating database.
 - `job_type` for background work
 
 ## Required metrics
+
 - workbook import count and failure count
 - time from upload accepted to optimized database ready
 - natural-language query latency
@@ -30,6 +33,7 @@ This document defines the observability model for the self-updating database.
 - optimized database rebuild duration
 
 ## Required traces
+
 - workbook upload to ingestion completion
 - initial pipeline generation
 - optimized database rebuild
@@ -38,6 +42,7 @@ This document defines the observability model for the self-updating database.
 - optimization recommendation or revision flow
 
 ## Core observability questions
+
 - Why did a workbook import fail?
 - Which generated SQL was executed for a given user query?
 - Which query clusters are becoming expensive enough to optimize?
@@ -45,6 +50,7 @@ This document defines the observability model for the self-updating database.
 - Which Codex CLI invocation produced a given optimization revision?
 
 ## Local workflow
+
 1. Start the TypeScript apps for the current worktree.
 2. Start the local observability stack if configured.
 3. Import a workbook.
@@ -52,11 +58,13 @@ This document defines the observability model for the self-updating database.
 5. Inspect logs, metrics, and traces for import, query, and any background jobs.
 
 ## Performance starter budgets
+
 - Upload accepted to import finished: < 60s for representative local fixtures
 - First query p95 latency: < 5s in the POC
 - Optimized database rebuild for representative fixtures: < 5m locally
 
 ## Troubleshooting
+
 - Missing query logs: verify the query service writes `QueryExecutionLog` before response completion.
 - Missing optimization traces: verify background jobs propagate trace context into Codex CLI orchestration.
 - Missing rebuild metrics: verify pipeline execution emits job lifecycle events.

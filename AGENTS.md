@@ -10,6 +10,7 @@
 - Branch prefix (agent work): prefer `codex/` for branches created primarily by an agent.
 
 ## Recommended repo architecture
+
 - `apps/web`: frontend for workbook upload, query workspace, history/diagnostics, and optimization insights.
 - `apps/api`: backend for ingestion orchestration, pipeline execution, natural-language query handling, query logging, clustering jobs, and optimization triggers.
 - `packages/shared`: shared TypeScript types, schemas, and contracts.
@@ -19,6 +20,7 @@
 - `docs/`: product and engineering system-of-record.
 
 ## How to create a PR (high level)
+
 1. Always create a new worktree, then a branch:
    - Branch naming: `codex/<short-kebab-case>` (agent) or `feature|fix|chore/<short-kebab-case>`
    - Example: `git worktree add ../wt-query-clustering -b codex/query-clustering`
@@ -33,6 +35,7 @@
 8. After merge, remove the worktree: `git worktree remove ../wt-query-clustering`
 
 ## Docs directory map
+
 - `ARCHITECTURE.md`: high-level system shape, package boundaries, and domain layering.
 - `docs/DESIGN.md`: product and interaction design principles for the upload-to-query workflow.
 - `docs/FRONTEND.md`: frontend structure, state boundaries, and UI quality expectations.
@@ -55,10 +58,11 @@
 - `docs/references/`: long-lived reference notes aimed at agents.
 
 ## House rules (defaults)
+
 - Preserve the immutable source database. Optimization work must happen through the stored pipeline and derived optimized database.
 - Prefer TypeScript-only tooling and docs across the repo.
 - Add tests for new behavior when feasible; avoid untested drive-by changes.
 - Do not add dependencies without explicit approval in the PR description.
 - Keep diffs small and scoped; avoid reformatting unrelated files.
 - When requirements are ambiguous, resolve them in docs once so future agents inherit the decision.
-</INSTRUCTIONS>
+  </INSTRUCTIONS>

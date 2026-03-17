@@ -4,11 +4,7 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: [
-      "dist/**",
-      "coverage/**",
-      "node_modules/**"
-    ]
+    ignores: ["dist/**", "coverage/**", "node_modules/**"],
   },
   js.configs.recommended,
   {
@@ -18,20 +14,20 @@ export default tseslint.config(
       ecmaVersion: 2022,
       sourceType: "module",
       globals: {
-        ...globals.node
+        ...globals.node,
       },
       parserOptions: {
         project: true,
-        tsconfigRootDir: import.meta.dirname
-      }
+        tsconfigRootDir: import.meta.dirname,
+      },
     },
     rules: {
       "@typescript-eslint/consistent-type-imports": [
         "error",
         {
-          prefer: "type-imports"
-        }
-      ]
-    }
+          prefer: "type-imports",
+        },
+      ],
+    },
   }
 );

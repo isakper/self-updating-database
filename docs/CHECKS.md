@@ -5,11 +5,13 @@ Last reviewed: 2026-03-17
 This doc defines the standard local validation loop before opening a PR.
 
 ## Current state
+
 - The repo is TypeScript-only.
 - The repo now has a Node-based workspace foundation with `pnpm`, TypeScript, ESLint, Prettier, Vitest, Husky, and lint-staged configured at the root.
 - App implementation is still early, so some commands are scaffolding-oriented until real app runtimes land.
 
 ## Canonical commands
+
 These are the current workspace-level commands and should stay stable as the apps grow.
 
 - Format: `pnpm format`
@@ -20,6 +22,7 @@ These are the current workspace-level commands and should stay stable as the app
 - Run locally: `pnpm dev`
 
 ## Suggested sequence
+
 1. Format
 2. Lint and typecheck
 3. Unit tests
@@ -27,14 +30,17 @@ These are the current workspace-level commands and should stay stable as the app
 5. Run locally and complete manual checks
 
 ## Run locally
+
 As app runtimes land, document the exact workspace commands and environment variables here.
 
 Expected local requirements:
+
 - Per-worktree port configuration
 - Local data directories for source DB, optimized DB, and logs
 - Test workbook fixtures for ingestion and query verification
 
 ## Manual checks
+
 - Upload a representative workbook and verify sheet discovery is correct.
 - Confirm the initial optimized query database build succeeds.
 - Run one natural-language query end to end.
@@ -44,4 +50,5 @@ Expected local requirements:
 - Verify observability signals exist for one query and one background job.
 
 ## Optional single entrypoint
+
 If a one-liner script is added later, keep it as a convenience only and ensure it matches this document.

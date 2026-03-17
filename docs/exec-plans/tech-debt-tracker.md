@@ -3,6 +3,7 @@
 Track ongoing cleanup work as small, well-scoped items.
 
 ## Current items
+
 - Item: Define the first concrete SQL safety and validation layer for generated queries.
   Owner: unassigned
   Impact: reduces risk in the first NL-to-SQL release.

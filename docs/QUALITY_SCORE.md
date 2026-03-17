@@ -5,6 +5,7 @@ Last reviewed: 2026-03-17
 Define what "good" means for the self-updating database product.
 
 ## Quality dimensions
+
 - Correctness: imports, pipeline execution, SQL generation, and query results behave as documented.
 - Safety: source data remains immutable and rebuilds are reproducible.
 - Maintainability: TypeScript contracts are shared, docs stay current, and package boundaries remain clear.
@@ -14,6 +15,7 @@ Define what "good" means for the self-updating database product.
 - Explainability: users and operators can inspect generated SQL, pipeline revisions, and failure reasons.
 
 ## Scoring prompts for reviews
+
 - Can a user understand what happened during import, query execution, and optimization?
 - Can an engineer rebuild the optimized database from source data and stored pipeline versions?
 - Can an agent trace a failed query from UI request to generated SQL to execution log?
