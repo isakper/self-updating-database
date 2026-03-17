@@ -11,9 +11,9 @@ export default tseslint.config(
     ]
   },
   js.configs.recommended,
-  ...tseslint.configs.recommendedTypeChecked,
   {
     files: ["**/*.{ts,tsx}"],
+    extends: [...tseslint.configs.recommendedTypeChecked],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: "module",
@@ -35,4 +35,3 @@ export default tseslint.config(
     }
   }
 );
-
