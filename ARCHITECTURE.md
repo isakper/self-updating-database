@@ -109,11 +109,7 @@ Cross-cutting integrations enter through explicit provider or adapter boundaries
 - Observability uses structured logs, metrics, and traces with correlation IDs.
 
 ## Architecture linting direction
-This repo currently ships a template architecture lint contract and Python-based stub tooling. The intended long-term enforcement path for this project is TypeScript-native.
-
-- Config: `architecture-lint.toml`
-- Current entrypoint: `scripts/lint-architecture`
-- Preferred future enforcement: ESLint custom rules or `dependency-cruiser` aligned to the layering described here.
+This repo is TypeScript-only. When structural enforcement is added, use TypeScript-native tooling such as ESLint custom rules or `dependency-cruiser` aligned to the layering described here.
 
 ## Runtime environments
 - Local: TypeScript apps run side-by-side with per-worktree ports and local data directories.

@@ -9,8 +9,7 @@ Last reviewed: 2026-03-17
 - Treat the source-database immutability rule as a first-class invariant.
 
 ## Language direction
-- Product code is expected to be TypeScript for both backend and frontend.
-- The current Python tests in this repo exist only to support transitional doc tooling and should not drive future product architecture.
+- Product code is TypeScript for both backend and frontend.
 
 ## Coverage goals
 - Target high coverage for core TypeScript backend and frontend logic.
@@ -26,7 +25,6 @@ Last reviewed: 2026-03-17
 ## Where tests should go
 - Frontend: colocated TypeScript tests in `apps/web`.
 - Backend: colocated TypeScript tests in `apps/api` and `packages/*`.
-- Transitional Python doc-lint tests may remain under `tests/` until the tooling is migrated.
 
 ## Tooling direction
 - TypeScript unit and integration tests: `vitest`.

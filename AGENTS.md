@@ -56,7 +56,7 @@
 
 ## House rules (defaults)
 - Preserve the immutable source database. Optimization work must happen through the stored pipeline and derived optimized database.
-- Prefer TypeScript-first tooling and docs. Current Python doc tooling is allowed to remain only as transitional repo maintenance infrastructure.
+- Prefer TypeScript-only tooling and docs across the repo.
 - Add tests for new behavior when feasible; avoid untested drive-by changes.
 - Do not add dependencies without explicit approval in the PR description.
 - Keep diffs small and scoped; avoid reformatting unrelated files.

@@ -1,0 +1,10 @@
+{
+  "name": "self-updating-database",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Docs-first TypeScript monorepo for a self-updating database product.",
+  "engines": {
+    "node": ">=20"
+  }
+}

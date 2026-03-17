@@ -3,7 +3,7 @@
 Last reviewed: 2026-03-17
 
 ## Purpose
-This policy defines the minimum doc structure and integrity rules enforced by doc-lint.
+This policy defines the minimum doc structure and integrity rules for the TypeScript-only repo.
 
 ## Required docs (v1)
 - `AGENTS.md`

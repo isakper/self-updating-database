@@ -5,7 +5,7 @@ Last reviewed: 2026-03-17
 This doc defines the standard local validation loop before opening a PR.
 
 ## Current state
-- The repo still contains Python-based doc tooling from the original template.
+- The repo is TypeScript-only.
 - The intended application implementation is a TypeScript monorepo with backend and frontend apps.
 - Until app tooling exists, keep this document explicit about what is implemented versus what is planned.
 
@@ -19,19 +19,12 @@ Document the actual commands here once the TypeScript workspace exists and keep 
 - Build: `pnpm build`
 - Run locally: `pnpm dev`
 
-## Transitional doc-tooling commands
-These are current repo-maintenance commands, not the long-term product runtime.
-
-- Architecture lint: `scripts/lint-architecture`
-- Doc tests: `pytest`
-
 ## Suggested sequence
 1. Format
 2. Lint and typecheck
 3. Unit tests
 4. Build
 5. Run locally and complete manual checks
-6. Run transitional doc checks if the change touched repo maintenance scripts or docs structure
 
 ## Run locally
 When the TypeScript apps land, document the exact workspace commands and environment variables here.
