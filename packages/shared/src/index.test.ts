@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { NaturalLanguageQueryRequest } from "./index";
+import type { NaturalLanguageQueryRequest } from "./index.js";
 
 describe("shared contracts", () => {
   it("defines the initial natural language query request shape", () => {
