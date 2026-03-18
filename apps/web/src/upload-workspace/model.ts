@@ -1,6 +1,16 @@
-import type { WorkbookImportSummary } from "../../../../packages/shared/src/index.js";
+import type {
+  QueryExecutionLog,
+  WorkbookImportSummary,
+} from "../../../../packages/shared/src/index.js";
 
 export interface UploadWorkspaceModel {
+  latestQueryLogs: Array<{
+    prompt: string;
+    queryLogLabel: string;
+    rowCountLabel: string;
+    status: QueryExecutionLog["status"];
+    timingLabel: string;
+  }>;
   cleanDatabaseLabel: string;
   cleanDatabaseStatusBadge: WorkbookImportSummary["processing"]["cleanDatabaseStatus"];
   headline: string;
@@ -16,7 +26,8 @@ export interface UploadWorkspaceModel {
 }
 
 export function buildUploadWorkspaceModel(
-  summary: WorkbookImportSummary
+  summary: WorkbookImportSummary,
+  queryLogs: QueryExecutionLog[] = []
 ): UploadWorkspaceModel {
   return {
     cleanDatabaseLabel: summary.processing.cleanDatabase
@@ -25,6 +36,16 @@ export function buildUploadWorkspaceModel(
     cleanDatabaseStatusBadge: summary.processing.cleanDatabaseStatus,
     headline: `${summary.workbookName} imported`,
     lastPipelineError: summary.processing.lastPipelineError,
+    latestQueryLogs: queryLogs.map((queryLog) => ({
+      prompt: queryLog.prompt,
+      queryLogLabel: `${queryLog.queryLogId} · ${queryLog.status}`,
+      rowCountLabel:
+        queryLog.rowCount === null
+          ? "No rows"
+          : `${queryLog.rowCount} row${queryLog.rowCount === 1 ? "" : "s"}`,
+      status: queryLog.status,
+      timingLabel: `${queryLog.totalLatencyMs}ms total`,
+    })),
     nextRetryLabel: summary.processing.nextRetryAt
       ? `Next retry at ${summary.processing.nextRetryAt}`
       : null,

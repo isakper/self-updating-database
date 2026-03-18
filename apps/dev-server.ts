@@ -1,5 +1,8 @@
+import { loadLocalEnvironment } from "./shared/load-env.js";
 import { startApiServer } from "./api/src/runtime/server.js";
 import { startWebServer } from "./web/src/runtime/server.js";
+
+loadLocalEnvironment();
 
 const api = await startApiServer({
   port: Number(process.env.API_PORT ?? "3001"),

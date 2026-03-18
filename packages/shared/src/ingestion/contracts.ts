@@ -24,6 +24,10 @@ export type PipelineStatus = "queued" | "running" | "succeeded" | "failed";
 
 export type CleanDatabaseStatus = "queued" | "running" | "succeeded" | "failed";
 
+export type CodexRunScope = "pipeline" | "query";
+
+export type CodexRunStream = "stderr" | "stdout" | "system";
+
 export interface SourceSheetSummary {
   sheetName: string;
   columnNames: string[];
@@ -51,6 +55,7 @@ export interface PipelineVersionRecord {
   createdBy: "codex_cli";
   pipelineId: string;
   pipelineVersionId: string;
+  promptMarkdown: string;
   sourceDatasetId: string;
   sqlText: string;
   summaryMarkdown: string;
@@ -93,4 +98,14 @@ export interface WorkbookImportSummary {
   totalRowCount: number;
   sheets: SourceSheetSummary[];
   importedAt: string;
+}
+
+export interface CodexRunEvent {
+  createdAt: string;
+  eventId: string;
+  message: string;
+  queryLogId: string | null;
+  scope: CodexRunScope;
+  sourceDatasetId: string;
+  stream: CodexRunStream;
 }

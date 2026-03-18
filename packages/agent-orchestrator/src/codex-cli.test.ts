@@ -26,6 +26,28 @@ describe("buildCodexPipelinePrompt", () => {
     const prompt = buildCodexPipelinePrompt({
       sourceDatabasePath: ".data/source-datasets.sqlite",
       sourceDatasetId: "dataset_1",
+      sourceProfile: {
+        sheetProfiles: [
+          {
+            columnProfiles: [
+              {
+                columnName: "Order ID",
+                inferredType: "string",
+                nonNullCount: 2,
+                nullCount: 0,
+                sampleValues: ["A-1", "A-2"],
+              },
+            ],
+            rowCount: 2,
+            sampleRows: [{ "Order ID": "A-1" }],
+            sheetName: "Orders",
+            sourceTableName: "source_sheet_sheet_1",
+          },
+        ],
+        sourceDatasetId: "dataset_1",
+        totalRowCount: 2,
+        workbookName: "sales.xlsx",
+      },
       sourceSheets: [
         {
           sheetName: "Orders",
@@ -38,8 +60,10 @@ describe("buildCodexPipelinePrompt", () => {
     });
 
     expect(prompt).toContain("source dataset id: dataset_1");
-    expect(prompt).toContain("source sqlite database path:");
+    expect(prompt).toContain("total imported rows: 2");
     expect(prompt).toContain("table source_sheet_sheet_1");
+    expect(prompt).toContain("source-profile.json");
+    expect(prompt).toContain("samples/source_sheet_sheet_1.json");
     expect(prompt).toContain("Write pipeline.sql");
     expect(prompt).toContain("analysis.json contract");
     expect(prompt).toContain(
@@ -84,6 +108,28 @@ setInterval(() => {}, 1000);
     const result = await generator.generatePipelineArtifacts({
       sourceDatabasePath: ".data/source-datasets.sqlite",
       sourceDatasetId: "dataset_1",
+      sourceProfile: {
+        sheetProfiles: [
+          {
+            columnProfiles: [
+              {
+                columnName: "Order ID",
+                inferredType: "string",
+                nonNullCount: 1,
+                nullCount: 0,
+                sampleValues: ["A-1"],
+              },
+            ],
+            rowCount: 1,
+            sampleRows: [{ "Order ID": "A-1" }],
+            sheetName: "Orders",
+            sourceTableName: "source_sheet_sheet_1",
+          },
+        ],
+        sourceDatasetId: "dataset_1",
+        totalRowCount: 1,
+        workbookName: "sales.xlsx",
+      },
       sourceSheets: [
         {
           sheetName: "Orders",

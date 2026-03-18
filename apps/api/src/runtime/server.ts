@@ -2,17 +2,24 @@ import { resolve } from "node:path";
 import { createServer } from "node:http";
 
 import { createCodexCliPipelineGenerator } from "../../../../packages/agent-orchestrator/src/index.js";
+import { createOpenAiSqlQueryGenerator } from "../../../../packages/agent-orchestrator/src/index.js";
 import {
   openSourceDatabase,
   SqliteSourceDatasetRepository,
 } from "../../../../packages/database-core/src/index.js";
 import {
+  createSqliteQueryExecutor,
   createSqliteCleanDatabaseBuilder,
+  validateQuerySql,
   validatePipelineSql,
 } from "../../../../packages/pipeline-sdk/src/index.js";
 import { createIngestionApi } from "../ingestion/api.js";
 import { handleIngestionRequest } from "../ingestion/http.js";
 import { createPipelineRetryScheduler } from "../ingestion/pipeline.js";
+import { createQueryApi } from "../query/api.js";
+import { handleQueryRequest } from "../query/http.js";
+import { createCodexRunEventHub } from "./codex-run-events.js";
+import { loadLocalEnvironment } from "../../../shared/load-env.js";
 
 export interface ApiServerOptions {
   cleanDatabaseDirectoryPath?: string;
@@ -34,6 +41,7 @@ export async function startApiServer(options: ApiServerOptions = {}): Promise<{
   const repository = new SqliteSourceDatasetRepository({
     connection: database,
   });
+  const codexRunEventHub = createCodexRunEventHub();
   const pipelineRetryScheduler = createPipelineRetryScheduler({
     cleanDatabaseBuilder: createSqliteCleanDatabaseBuilder(),
     cleanDatabaseDirectoryPath: resolve(
@@ -42,6 +50,9 @@ export async function startApiServer(options: ApiServerOptions = {}): Promise<{
         ".data/clean-databases"
     ),
     codexPipelineGenerator: createCodexCliPipelineGenerator(),
+    onRunEvent: (runEvent) => {
+      codexRunEventHub.publish(runEvent);
+    },
     repository,
     sourceDatabasePath: database.databaseFilePath,
     sqlValidator: {
@@ -52,6 +63,17 @@ export async function startApiServer(options: ApiServerOptions = {}): Promise<{
     pipelineRetryScheduler,
     repository,
   });
+  const queryApi = createQueryApi({
+    onRunEvent: (runEvent) => {
+      codexRunEventHub.publish(runEvent);
+    },
+    queryExecutor: createSqliteQueryExecutor(),
+    queryGenerator: createOpenAiSqlQueryGenerator(),
+    repository,
+    sqlValidator: {
+      validate: validateQuerySql,
+    },
+  });
   const port = options.port ?? Number(process.env.API_PORT ?? "3001");
 
   pipelineRetryScheduler.resumePendingWork();
@@ -59,6 +81,40 @@ export async function startApiServer(options: ApiServerOptions = {}): Promise<{
   const server = createServer((request, response) => {
     void (async () => {
       try {
+        if (
+          request.method === "GET" &&
+          request.url?.startsWith("/api/stream/")
+        ) {
+          const requestUrl = new URL(request.url, "http://localhost");
+          const datasetId = requestUrl.pathname.split("/").at(-1);
+
+          if (!datasetId) {
+            response.writeHead(400, {
+              "content-type": "application/json; charset=utf-8",
+            });
+            response.end(JSON.stringify({ error: "Dataset id is required." }));
+            return;
+          }
+
+          codexRunEventHub.handleSse(
+            datasetId,
+            request,
+            response,
+            repository.listCodexRunEvents(datasetId)
+          );
+          return;
+        }
+
+        const handledQueryRequest = await handleQueryRequest({
+          api: queryApi,
+          request,
+          response,
+        });
+
+        if (handledQueryRequest) {
+          return;
+        }
+
         const handled = await handleIngestionRequest({
           api,
           request,
@@ -108,6 +164,7 @@ export async function startApiServer(options: ApiServerOptions = {}): Promise<{
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
+  loadLocalEnvironment();
   const started = await startApiServer();
   console.log(`API server listening on http://127.0.0.1:${started.port}`);
 }

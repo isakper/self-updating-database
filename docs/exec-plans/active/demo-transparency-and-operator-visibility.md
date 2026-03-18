@@ -14,11 +14,26 @@ Make the product legible during demos and debugging by exposing what the system 
 
 ## Milestones
 
-- Add a clear status timeline for the upload-to-clean-database flow.
-- Expose Codex artifacts in the UI, including the prompt, `analysis.json`, `summary.md`, and `pipeline.sql`.
-- Add operator-facing views for clean-database readiness, retry state, and last failure reason.
-- Extend the later query workspace so it shows natural-language input, generated SQL, execution latency, and result status in a clear sequence.
-- Add a compact event/log feed that makes the current system state understandable during live demos.
+- Keep the delivered upload-to-clean-database status surfaces trustworthy and easy to scan.
+- Keep Codex artifacts visible in the UI, including the prompt, `analysis.json`, `summary.md`, and `pipeline.sql`.
+- Keep operator-facing views for clean-database readiness, retry state, and last failure reason accurate as the backend evolves.
+- Improve the query workspace so the streamed SQL generation, final SQL, execution status, and result rendering feel like one coherent story.
+- Add a more structured event/log feed that distinguishes active-run output from historical logs.
+
+## Delivered So Far
+
+- Dataset pages now show import status, pipeline status, clean-database status, retry state, and last failure details.
+- Codex pipeline artifacts are visible directly in the UI after a successful run.
+- Live pipeline CLI output is streamed into the dataset page over SSE.
+- Query pages now show generated SQL, result rows, recent query logs, and streamed SQL-generation output for the active query run.
+
+## Remaining Work
+
+- Add a clearer status timeline instead of relying on stacked status paragraphs and expandable sections.
+- Separate historical pipeline/query events from the currently active run so the live panels read cleanly in demos.
+- Improve event formatting so system messages, streamed SQL, and failure reasons are visually distinct.
+- Add query-specific operator detail for invalid SQL, missing tables, and validation failures without forcing users to read raw logs.
+- Decide how much raw Codex CLI chatter should remain visible versus summarized for demo audiences.
 
 ## Validation
 
