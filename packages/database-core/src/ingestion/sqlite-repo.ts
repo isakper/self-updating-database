@@ -9,9 +9,11 @@ import initSqlJs, {
 
 import type {
   CleanDatabaseSummary,
+  CodexRunEvent,
   ImportProcessingState,
   PipelineRunRecord,
   PipelineVersionRecord,
+  QueryExecutionLog,
 } from "../../../shared/src/index.js";
 import type { IngestionRepository } from "./repo.js";
 import type { SourceDataset, SourceRow, SourceSheet } from "./types.js";
@@ -311,6 +313,7 @@ export class SqliteSourceDatasetRepository implements IngestionRepository {
           pipeline_id,
           pipeline_version_id,
           source_dataset_id,
+          prompt_markdown,
           sql_text,
           analysis_json,
           summary_markdown,
@@ -321,6 +324,7 @@ export class SqliteSourceDatasetRepository implements IngestionRepository {
           $pipelineId,
           $pipelineVersionId,
           $sourceDatasetId,
+          $promptMarkdown,
           $sqlText,
           $analysisJson,
           $summaryMarkdown,
@@ -334,6 +338,7 @@ export class SqliteSourceDatasetRepository implements IngestionRepository {
         $createdBy: versionRecord.createdBy,
         $pipelineId: versionRecord.pipelineId,
         $pipelineVersionId: versionRecord.pipelineVersionId,
+        $promptMarkdown: versionRecord.promptMarkdown,
         $sourceDatasetId: versionRecord.sourceDatasetId,
         $sqlText: versionRecord.sqlText,
         $summaryMarkdown: versionRecord.summaryMarkdown,
@@ -352,6 +357,7 @@ export class SqliteSourceDatasetRepository implements IngestionRepository {
           pipeline_id,
           pipeline_version_id,
           source_dataset_id,
+          prompt_markdown,
           sql_text,
           analysis_json,
           summary_markdown,
@@ -456,6 +462,167 @@ export class SqliteSourceDatasetRepository implements IngestionRepository {
       { $nowIso: nowIso }
     ).map((row) => readString(row, "dataset_id"));
   }
+
+  saveCodexRunEvent(runEvent: CodexRunEvent): void {
+    this.#connection.database.run(
+      `
+        INSERT INTO codex_run_events (
+          event_id,
+          source_dataset_id,
+          scope,
+          stream,
+          message,
+          created_at,
+          query_log_id
+        )
+        VALUES (
+          $eventId,
+          $sourceDatasetId,
+          $scope,
+          $stream,
+          $message,
+          $createdAt,
+          $queryLogId
+        )
+      `,
+      {
+        $createdAt: runEvent.createdAt,
+        $eventId: runEvent.eventId,
+        $message: runEvent.message,
+        $queryLogId: runEvent.queryLogId,
+        $scope: runEvent.scope,
+        $sourceDatasetId: runEvent.sourceDatasetId,
+        $stream: runEvent.stream,
+      }
+    );
+    this.#connection.persist();
+  }
+
+  listCodexRunEvents(sourceDatasetId: string, limit = 200): CodexRunEvent[] {
+    return readRows(
+      this.#connection.database,
+      `
+        SELECT
+          event_id,
+          source_dataset_id,
+          scope,
+          stream,
+          message,
+          created_at,
+          query_log_id
+        FROM codex_run_events
+        WHERE source_dataset_id = $sourceDatasetId
+        ORDER BY created_at ASC, event_id ASC
+        LIMIT $limit
+      `,
+      {
+        $limit: limit,
+        $sourceDatasetId: sourceDatasetId,
+      }
+    ).map(parseCodexRunEvent);
+  }
+
+  saveQueryExecutionLog(queryLog: QueryExecutionLog): void {
+    this.#connection.database.run(
+      `
+        INSERT INTO query_execution_logs (
+          query_log_id,
+          source_dataset_id,
+          clean_database_id,
+          prompt,
+          generated_sql,
+          summary_markdown,
+          status,
+          error_message,
+          generation_started_at,
+          generation_finished_at,
+          generation_latency_ms,
+          execution_started_at,
+          execution_finished_at,
+          execution_latency_ms,
+          total_latency_ms,
+          row_count,
+          result_column_names_json
+        )
+        VALUES (
+          $queryLogId,
+          $sourceDatasetId,
+          $cleanDatabaseId,
+          $prompt,
+          $generatedSql,
+          $summaryMarkdown,
+          $status,
+          $errorMessage,
+          $generationStartedAt,
+          $generationFinishedAt,
+          $generationLatencyMs,
+          $executionStartedAt,
+          $executionFinishedAt,
+          $executionLatencyMs,
+          $totalLatencyMs,
+          $rowCount,
+          $resultColumnNamesJson
+        )
+      `,
+      {
+        $cleanDatabaseId: queryLog.cleanDatabaseId,
+        $errorMessage: queryLog.errorMessage,
+        $executionFinishedAt: queryLog.executionFinishedAt,
+        $executionLatencyMs: queryLog.executionLatencyMs,
+        $executionStartedAt: queryLog.executionStartedAt,
+        $generatedSql: queryLog.generatedSql,
+        $generationFinishedAt: queryLog.generationFinishedAt,
+        $generationLatencyMs: queryLog.generationLatencyMs,
+        $generationStartedAt: queryLog.generationStartedAt,
+        $prompt: queryLog.prompt,
+        $queryLogId: queryLog.queryLogId,
+        $resultColumnNamesJson: JSON.stringify(queryLog.resultColumnNames),
+        $rowCount: queryLog.rowCount,
+        $sourceDatasetId: queryLog.sourceDatasetId,
+        $status: queryLog.status,
+        $summaryMarkdown: queryLog.summaryMarkdown,
+        $totalLatencyMs: queryLog.totalLatencyMs,
+      }
+    );
+    this.#connection.persist();
+  }
+
+  listQueryExecutionLogs(
+    sourceDatasetId: string,
+    limit = 20
+  ): QueryExecutionLog[] {
+    return readRows(
+      this.#connection.database,
+      `
+        SELECT
+          query_log_id,
+          source_dataset_id,
+          clean_database_id,
+          prompt,
+          generated_sql,
+          summary_markdown,
+          status,
+          error_message,
+          generation_started_at,
+          generation_finished_at,
+          generation_latency_ms,
+          execution_started_at,
+          execution_finished_at,
+          execution_latency_ms,
+          total_latency_ms,
+          row_count,
+          result_column_names_json
+        FROM query_execution_logs
+        WHERE source_dataset_id = $sourceDatasetId
+        ORDER BY generation_started_at DESC, query_log_id DESC
+        LIMIT $limit
+      `,
+      {
+        $limit: limit,
+        $sourceDatasetId: sourceDatasetId,
+      }
+    ).map(parseQueryExecutionLog);
+  }
 }
 
 function initializeSourceDatabase(database: Database): void {
@@ -503,6 +670,7 @@ function initializeSourceDatabase(database: Database): void {
       pipeline_version_id TEXT PRIMARY KEY,
       pipeline_id TEXT NOT NULL,
       source_dataset_id TEXT NOT NULL,
+      prompt_markdown TEXT NOT NULL DEFAULT '',
       sql_text TEXT NOT NULL,
       analysis_json TEXT NOT NULL,
       summary_markdown TEXT NOT NULL,
@@ -524,6 +692,38 @@ function initializeSourceDatabase(database: Database): void {
       FOREIGN KEY (source_dataset_id) REFERENCES source_datasets(id)
     );
 
+    CREATE TABLE IF NOT EXISTS query_execution_logs (
+      query_log_id TEXT PRIMARY KEY,
+      source_dataset_id TEXT NOT NULL,
+      clean_database_id TEXT NOT NULL,
+      prompt TEXT NOT NULL,
+      generated_sql TEXT,
+      summary_markdown TEXT,
+      status TEXT NOT NULL,
+      error_message TEXT,
+      generation_started_at TEXT NOT NULL,
+      generation_finished_at TEXT,
+      generation_latency_ms INTEGER,
+      execution_started_at TEXT,
+      execution_finished_at TEXT,
+      execution_latency_ms INTEGER,
+      total_latency_ms INTEGER NOT NULL,
+      row_count INTEGER,
+      result_column_names_json TEXT NOT NULL,
+      FOREIGN KEY (source_dataset_id) REFERENCES source_datasets(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS codex_run_events (
+      event_id TEXT PRIMARY KEY,
+      source_dataset_id TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      stream TEXT NOT NULL,
+      message TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      query_log_id TEXT,
+      FOREIGN KEY (source_dataset_id) REFERENCES source_datasets(id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_source_sheets_dataset_id
       ON source_sheets(dataset_id, sheet_order);
 
@@ -535,7 +735,20 @@ function initializeSourceDatabase(database: Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_pipeline_runs_dataset_id
       ON pipeline_runs(source_dataset_id, run_started_at);
+
+    CREATE INDEX IF NOT EXISTS idx_query_execution_logs_dataset_id
+      ON query_execution_logs(source_dataset_id, generation_started_at);
+
+    CREATE INDEX IF NOT EXISTS idx_codex_run_events_dataset_id
+      ON codex_run_events(source_dataset_id, created_at);
   `);
+
+  ensureColumnExists(
+    database,
+    "pipeline_versions",
+    "prompt_markdown",
+    "TEXT NOT NULL DEFAULT ''"
+  );
 }
 
 function createSourceSheetTable(database: Database, sheet: SourceSheet): void {
@@ -617,6 +830,7 @@ function parsePipelineVersionRecord(
     createdBy: "codex_cli",
     pipelineId: readString(row, "pipeline_id"),
     pipelineVersionId: readString(row, "pipeline_version_id"),
+    promptMarkdown: readString(row, "prompt_markdown"),
     sourceDatasetId: readString(row, "source_dataset_id"),
     sqlText: readString(row, "sql_text"),
     summaryMarkdown: readString(row, "summary_markdown"),
@@ -656,6 +870,42 @@ function parseCleanDatabaseSummary(
   };
 }
 
+function parseQueryExecutionLog(
+  row: Record<string, SqlValue>
+): QueryExecutionLog {
+  return {
+    cleanDatabaseId: readString(row, "clean_database_id"),
+    errorMessage: readNullableString(row, "error_message"),
+    executionFinishedAt: readNullableString(row, "execution_finished_at"),
+    executionLatencyMs: readNullableNumber(row, "execution_latency_ms"),
+    executionStartedAt: readNullableString(row, "execution_started_at"),
+    generatedSql: readNullableString(row, "generated_sql"),
+    generationFinishedAt: readNullableString(row, "generation_finished_at"),
+    generationLatencyMs: readNullableNumber(row, "generation_latency_ms"),
+    generationStartedAt: readString(row, "generation_started_at"),
+    prompt: readString(row, "prompt"),
+    queryLogId: readString(row, "query_log_id"),
+    resultColumnNames: readStringArray(row, "result_column_names_json"),
+    rowCount: readNullableNumber(row, "row_count"),
+    sourceDatasetId: readString(row, "source_dataset_id"),
+    status: readString(row, "status") as QueryExecutionLog["status"],
+    summaryMarkdown: readNullableString(row, "summary_markdown"),
+    totalLatencyMs: readNumber(row, "total_latency_ms"),
+  };
+}
+
+function parseCodexRunEvent(row: Record<string, SqlValue>): CodexRunEvent {
+  return {
+    createdAt: readString(row, "created_at"),
+    eventId: readString(row, "event_id"),
+    message: readString(row, "message"),
+    queryLogId: readNullableString(row, "query_log_id"),
+    scope: readString(row, "scope") as CodexRunEvent["scope"],
+    sourceDatasetId: readString(row, "source_dataset_id"),
+    stream: readString(row, "stream") as CodexRunEvent["stream"],
+  };
+}
+
 function readString(row: Record<string, SqlValue>, key: string): string {
   const value = row[key];
 
@@ -688,6 +938,23 @@ function readNumber(row: Record<string, SqlValue>, key: string): number {
 
   if (typeof value !== "number") {
     throw new Error(`Expected ${key} to be a number.`);
+  }
+
+  return value;
+}
+
+function readNullableNumber(
+  row: Record<string, SqlValue>,
+  key: string
+): number | null {
+  const value = row[key];
+
+  if (value === null) {
+    return null;
+  }
+
+  if (typeof value !== "number") {
+    throw new Error(`Expected ${key} to be a nullable number.`);
   }
 
   return value;
@@ -758,4 +1025,24 @@ function toSqlValue(value: SourceRow["values"][string]): SqlValue {
   }
 
   return value;
+}
+
+function ensureColumnExists(
+  database: Database,
+  tableName: string,
+  columnName: string,
+  definitionSql: string
+): void {
+  const existingColumns = readRows(
+    database,
+    `PRAGMA table_info(${tableName})`
+  ).map((row) => readString(row, "name"));
+
+  if (existingColumns.includes(columnName)) {
+    return;
+  }
+
+  database.run(
+    `ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definitionSql}`
+  );
 }

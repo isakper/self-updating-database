@@ -9,6 +9,7 @@ import {
 } from "../../../../packages/database-core/src/index.js";
 import type {
   CleanDatabaseSummary,
+  CodexRunEvent,
   PipelineRunRecord,
   PipelineVersionRecord,
 } from "../../../../packages/shared/src/index.js";
@@ -16,6 +17,7 @@ import type {
   CleanDatabaseBuilder,
   PipelineSqlValidationResult,
 } from "../../../../packages/pipeline-sdk/src/index.js";
+import { buildSourceDatasetProfile } from "./source-profile.js";
 
 export interface PipelineSqlValidator {
   validate(sqlText: string): PipelineSqlValidationResult;
@@ -33,6 +35,7 @@ export interface CreatePipelineRetrySchedulerOptions {
   codexPipelineGenerator: CodexPipelineGenerator;
   createId?: (prefix: string) => string;
   now?: () => Date;
+  onRunEvent?: (runEvent: CodexRunEvent) => void;
   repository: IngestionRepository;
   retryDelayMs?: number;
   sourceDatabasePath: string;
@@ -49,6 +52,19 @@ export function createPipelineRetryScheduler(
       `${prefix}_${Math.random().toString(36).slice(2, 10)}`);
   const now = options.now ?? (() => new Date());
   const inFlight = new Set<Promise<void>>();
+
+  function recordRunEvent(
+    runEvent: Omit<CodexRunEvent, "createdAt" | "eventId">
+  ) {
+    const persistedRunEvent: CodexRunEvent = {
+      createdAt: now().toISOString(),
+      eventId: createId("codex_run_event"),
+      ...runEvent,
+    };
+
+    options.repository.saveCodexRunEvent(persistedRunEvent);
+    options.onRunEvent?.(persistedRunEvent);
+  }
 
   async function processDataset(datasetId: string): Promise<void> {
     const dataset = options.repository.getById(datasetId);
@@ -69,6 +85,13 @@ export function createPipelineRetryScheduler(
       nextRetryAt: null,
       pipelineStatus: "running",
     });
+    recordRunEvent({
+      message: `Starting pipeline generation for ${dataset.workbookName}.`,
+      queryLogId: null,
+      scope: "pipeline",
+      sourceDatasetId: datasetId,
+      stream: "system",
+    });
 
     let versionRecord: PipelineVersionRecord | null = null;
     let runRecord: PipelineRunRecord | null = null;
@@ -76,8 +99,18 @@ export function createPipelineRetryScheduler(
     try {
       const generated =
         await options.codexPipelineGenerator.generatePipelineArtifacts({
+          onRunEvent: (runEvent) => {
+            recordRunEvent({
+              message: runEvent.message,
+              queryLogId: null,
+              scope: "pipeline",
+              sourceDatasetId: datasetId,
+              stream: runEvent.stream,
+            });
+          },
           sourceDatabasePath: options.sourceDatabasePath,
           sourceDatasetId: datasetId,
+          sourceProfile: buildSourceDatasetProfile(dataset),
           sourceSheets: createWorkbookImportSummary(dataset, previousState)
             .sheets,
           workbookName: dataset.workbookName,
@@ -89,6 +122,7 @@ export function createPipelineRetryScheduler(
         createdBy: "codex_cli",
         pipelineId: `pipeline_${datasetId}`,
         pipelineVersionId: createId("pipeline_version"),
+        promptMarkdown: generated.prompt,
         sourceDatasetId: datasetId,
         sqlText: generated.sqlText,
         summaryMarkdown: generated.summaryMarkdown,
@@ -112,6 +146,13 @@ export function createPipelineRetryScheduler(
       if (!validation.isValid) {
         throw new Error(validation.errors.join(" "));
       }
+      recordRunEvent({
+        message: "Generated pipeline SQL passed validation.",
+        queryLogId: null,
+        scope: "pipeline",
+        sourceDatasetId: datasetId,
+        stream: "system",
+      });
 
       const builtAt = now().toISOString();
       const cleanDatabase = await buildCleanDatabase({
@@ -140,6 +181,13 @@ export function createPipelineRetryScheduler(
         pipelineRun: completedRun,
         pipelineStatus: "succeeded",
         pipelineVersion: versionRecord,
+      });
+      recordRunEvent({
+        message: `Clean database build completed: ${cleanDatabase.cleanDatabaseId}.`,
+        queryLogId: null,
+        scope: "pipeline",
+        sourceDatasetId: datasetId,
+        stream: "system",
       });
     } catch (error) {
       const errorMessage =
@@ -173,6 +221,13 @@ export function createPipelineRetryScheduler(
         pipelineRun: failedRun,
         pipelineStatus: "failed",
         pipelineVersion: versionRecord,
+      });
+      recordRunEvent({
+        message: errorMessage,
+        queryLogId: null,
+        scope: "pipeline",
+        sourceDatasetId: datasetId,
+        stream: "system",
       });
 
       if (retryCount < 5) {

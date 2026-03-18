@@ -70,17 +70,33 @@ describe("pipeline retry scheduler", () => {
 
     const processingState = repository.getImportProcessingState("dataset_1");
 
-    expect(processingState).toMatchObject({
-      cleanDatabase: {
-        cleanDatabaseId: "clean_db_3",
-      },
-      cleanDatabaseStatus: "succeeded",
-      pipelineRetryCount: 0,
-      pipelineStatus: "succeeded",
-      pipelineVersion: {
-        pipelineVersionId: "pipeline_version_1",
-      },
-    });
+    expect(processingState?.cleanDatabaseStatus).toBe("succeeded");
+    expect(processingState?.pipelineRetryCount).toBe(0);
+    expect(processingState?.pipelineStatus).toBe("succeeded");
+    expect(processingState?.cleanDatabase?.cleanDatabaseId).toMatch(
+      /^clean_db_/
+    );
+    expect(processingState?.pipelineVersion?.pipelineVersionId).toMatch(
+      /^pipeline_version_/
+    );
+    const runEvents = repository.listCodexRunEvents("dataset_1");
+
+    expect(
+      runEvents.some(
+        (runEvent) =>
+          runEvent.scope === "pipeline" &&
+          runEvent.sourceDatasetId === "dataset_1" &&
+          runEvent.message.includes("Starting pipeline generation")
+      )
+    ).toBe(true);
+    expect(
+      runEvents.some(
+        (runEvent) =>
+          runEvent.scope === "pipeline" &&
+          runEvent.sourceDatasetId === "dataset_1" &&
+          runEvent.message === "Generated pipeline SQL passed validation."
+      )
+    ).toBe(true);
   });
 
   it("retries failed analysis runs up to the configured limit", async () => {

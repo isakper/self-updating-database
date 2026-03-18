@@ -1,0 +1,25 @@
+{
+  "workbookName": "retailer-transactions-demo.xlsx",
+  "generatedAt": "2026-03-18T09:35:36.499Z",
+  "sheets": [
+    {
+      "name": "Transactions",
+      "rows": 27675
+    },
+    {
+      "name": "Items",
+      "rows": 180
+    },
+    {
+      "name": "Stores",
+      "rows": 12
+    }
+  ],
+  "notes": [
+    "Transactions are line-level receipt records spanning Q1 2025.",
+    "Returns are represented as negative-unit lines with returnFlag=Yes.",
+    "Prices include a mix of VAT rates (0%, 7%, 12%, 25%).",
+    "Promotions join onto eligible lines via promotionId.",
+    "The workbook is deterministic and can be regenerated from tools/generate-retail-demo-workbook.ts."
+  ]
+}

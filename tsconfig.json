@@ -8,6 +8,7 @@
     "apps/**/*.tsx",
     "packages/**/*.ts",
     "packages/**/*.tsx",
+    "tools/**/*.ts",
     "*.ts",
     "*.mts",
     "*.cts"

@@ -1,23 +1,23 @@
-import {
-  mkdtemp,
-  mkdir,
-  readFile,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { dirname, join } from "node:path";
 
 import type {
+  CodexRunEvent,
   CodexAnalysisArtifact,
   SourceSheetSummary,
 } from "../../shared/src/index.js";
+import {
+  readRequiredArtifact,
+  runCodexCommand,
+} from "./codex-command-runner.js";
 
 export interface GeneratePipelineArtifactsOptions {
+  onRunEvent?: (runEvent: Pick<CodexRunEvent, "message" | "stream">) => void;
   sourceDatabasePath: string;
   sourceDatasetId: string;
+  sourceProfile: SourceDatasetProfile;
   sourceSheets: SourceSheetSummary[];
   workbookName: string;
 }
@@ -45,10 +45,40 @@ export interface CodexCliPipelineGeneratorOptions {
   processExitGracePeriodMs?: number;
 }
 
+export interface SourceDatasetProfile {
+  sheetProfiles: SourceSheetProfile[];
+  sourceDatasetId: string;
+  totalRowCount: number;
+  workbookName: string;
+}
+
+export interface SourceSheetProfile {
+  columnProfiles: Array<{
+    columnName: string;
+    inferredType:
+      | "boolean"
+      | "date-like"
+      | "empty"
+      | "mixed"
+      | "number"
+      | "string";
+    nonNullCount: number;
+    nullCount: number;
+    sampleValues: string[];
+  }>;
+  rowCount: number;
+  sampleRows: Array<Record<string, boolean | number | string | null>>;
+  sheetName: string;
+  sourceTableName: string;
+}
+
 export function createCodexCliPipelineGenerator(
   options: CodexCliPipelineGeneratorOptions = {}
 ): CodexPipelineGenerator {
-  const codexCommand = options.codexCommand ?? "codex";
+  const codexCommand =
+    options.codexCommand ??
+    process.env.CODEX_COMMAND ??
+    resolveDefaultCodexCommand();
   const artifactPollIntervalMs = options.artifactPollIntervalMs ?? 200;
   const commandTimeoutMs = options.commandTimeoutMs ?? 120_000;
   const playwrightMcpStartupTimeoutSec =
@@ -61,9 +91,26 @@ export function createCodexCliPipelineGenerator(
       const prompt = buildCodexPipelinePrompt(input);
       const promptPath = join(workspacePath, "prompt.md");
       const lastMessagePath = join(workspacePath, "codex-last-message.md");
+      const sourceProfilePath = join(workspacePath, "source-profile.json");
+      const samplesDirectoryPath = join(workspacePath, "samples");
 
       await mkdir(dirname(lastMessagePath), { recursive: true });
+      await mkdir(samplesDirectoryPath, { recursive: true });
       await writeFile(promptPath, prompt, "utf8");
+      await writeFile(
+        sourceProfilePath,
+        JSON.stringify(input.sourceProfile, null, 2),
+        "utf8"
+      );
+      await Promise.all(
+        input.sourceProfile.sheetProfiles.map((sheetProfile) =>
+          writeFile(
+            join(samplesDirectoryPath, `${sheetProfile.sourceTableName}.json`),
+            JSON.stringify(sheetProfile.sampleRows, null, 2),
+            "utf8"
+          )
+        )
+      );
 
       try {
         await runCodexCommand(
@@ -75,8 +122,6 @@ export function createCodexCliPipelineGenerator(
             "workspace-write",
             "-c",
             `mcp_servers.playwright.startup_timeout_sec=${playwrightMcpStartupTimeoutSec}`,
-            "--add-dir",
-            dirname(resolve(input.sourceDatabasePath)),
             "--cd",
             workspacePath,
             "--output-last-message",
@@ -94,6 +139,22 @@ export function createCodexCliPipelineGenerator(
           {
             artifactPollIntervalMs,
             commandTimeoutMs,
+            ...(input.onRunEvent
+              ? {
+                  onStderrChunk: (chunk: string) => {
+                    input.onRunEvent?.({
+                      message: chunk,
+                      stream: "stderr",
+                    });
+                  },
+                  onStdoutChunk: (chunk: string) => {
+                    input.onRunEvent?.({
+                      message: chunk,
+                      stream: "stdout",
+                    });
+                  },
+                }
+              : {}),
             processExitGracePeriodMs,
           }
         );
@@ -124,161 +185,14 @@ export function createCodexCliPipelineGenerator(
   };
 }
 
-async function runCodexCommand(
-  codexCommand: string,
-  args: string[],
-  prompt: string,
-  cwd: string,
-  requiredArtifacts: string[],
-  options: {
-    artifactPollIntervalMs: number;
-    commandTimeoutMs: number;
-    processExitGracePeriodMs: number;
-  }
-): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(codexCommand, args, {
-      cwd,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    let settled = false;
-    let stderr = "";
-    let stdout = "";
+function resolveDefaultCodexCommand(): string {
+  const installedCodexPath = "/Applications/Codex.app/Contents/Resources/codex";
 
-    const artifactPoll = setInterval(() => {
-      void checkArtifacts();
-    }, options.artifactPollIntervalMs);
-    const commandTimeout = setTimeout(() => {
-      finishWithError(
-        new Error(
-          [
-            `Codex CLI timed out after ${options.commandTimeoutMs}ms.`,
-            stderr && `stderr: ${stderr.trim()}`,
-            stdout && `stdout: ${stdout.trim()}`,
-          ]
-            .filter(Boolean)
-            .join(" ")
-        )
-      );
-    }, options.commandTimeoutMs);
-
-    function cleanup(): void {
-      clearInterval(artifactPoll);
-      clearTimeout(commandTimeout);
-    }
-
-    function finishWithSuccess(): void {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      cleanup();
-      void stopChildProcess(child, options.processExitGracePeriodMs);
-      resolve();
-    }
-
-    function finishWithError(error: Error): void {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      cleanup();
-      void stopChildProcess(child, options.processExitGracePeriodMs);
-      reject(error);
-    }
-
-    async function checkArtifacts(): Promise<void> {
-      if (settled) {
-        return;
-      }
-
-      if (await areArtifactsReady(requiredArtifacts)) {
-        finishWithSuccess();
-      }
-    }
-
-    child.stderr.on("data", (chunk: Buffer | string) => {
-      stderr += chunk.toString();
-    });
-
-    child.stdout.on("data", (chunk: Buffer | string) => {
-      stdout += chunk.toString();
-    });
-
-    child.on("error", (error) => {
-      finishWithError(error);
-    });
-
-    child.on("close", (code) => {
-      if (settled) {
-        return;
-      }
-
-      if (code === 0) {
-        void checkArtifacts().then(() => {
-          if (!settled) {
-            finishWithError(
-              new Error(
-                "Codex CLI exited successfully without writing the required artifacts."
-              )
-            );
-          }
-        });
-        return;
-      }
-
-      finishWithError(
-        new Error(stderr || `Codex CLI exited with code ${code ?? "unknown"}.`)
-      );
-    });
-
-    child.stdin.write(prompt);
-    child.stdin.end();
-    void checkArtifacts();
-  });
-}
-
-async function areArtifactsReady(filePaths: string[]): Promise<boolean> {
-  const statuses = await Promise.all(
-    filePaths.map(async (filePath) => {
-      try {
-        const fileStat = await stat(filePath);
-        return fileStat.isFile() && fileStat.size > 0;
-      } catch {
-        return false;
-      }
-    })
-  );
-
-  return statuses.every(Boolean);
-}
-
-async function stopChildProcess(
-  child: ChildProcessWithoutNullStreams,
-  processExitGracePeriodMs: number
-): Promise<void> {
-  if (child.killed || child.exitCode !== null) {
-    return;
+  if (existsSync(installedCodexPath)) {
+    return installedCodexPath;
   }
 
-  child.kill("SIGTERM");
-
-  await new Promise<void>((resolve) => {
-    const forceKillTimeout = setTimeout(() => {
-      if (!child.killed && child.exitCode === null) {
-        child.kill("SIGKILL");
-      }
-
-      resolve();
-    }, processExitGracePeriodMs);
-
-    child.once("close", () => {
-      clearTimeout(forceKillTimeout);
-      resolve();
-    });
-  });
+  return "codex";
 }
 
 export function buildCodexPipelinePrompt(
@@ -290,18 +204,30 @@ export function buildCodexPipelinePrompt(
         `- ${sheet.sheetName} -> table ${sheet.sourceTableName} (${sheet.rowCount} rows, columns: ${sheet.columnNames.join(", ")})`
     )
     .join("\n");
+  const sampleFileList = options.sourceProfile.sheetProfiles
+    .map(
+      (sheetProfile) =>
+        `- samples/${sheetProfile.sourceTableName}.json (${sheetProfile.sampleRows.length} sampled rows from ${sheetProfile.sheetName})`
+    )
+    .join("\n");
 
   return `You are generating a SQL-only cleaning pipeline for a self-updating database prototype.
 
 Dataset:
 - source dataset id: ${options.sourceDatasetId}
 - workbook name: ${options.workbookName}
-- source sqlite database path: ${resolve(options.sourceDatabasePath)}
+- total imported rows: ${options.sourceProfile.totalRowCount}
 
 Source tables for this dataset:
 ${sheetSummaries}
 
-Inspect the source database directly and identify:
+Primary inspection artifacts in the current workspace:
+- source-profile.json
+${sampleFileList}
+
+Use the profile and sampled-row artifacts as your primary inspection input. They are intentionally bounded so the pipeline can still be generated reliably for larger datasets.
+
+Identify:
 - bad or inconsistent column names
 - misspelled or inconsistent categorical values
 - mixed data types
@@ -362,18 +288,6 @@ Important:
 - generate SQL that can be rerun from scratch
 - prefer stable table names in the clean database
 - ensure source data remains immutable`;
-}
-
-async function readRequiredArtifact(filePath: string): Promise<string> {
-  const fileStat = await stat(filePath);
-
-  if (!fileStat.isFile() || fileStat.size === 0) {
-    throw new Error(
-      `Expected Codex to write a non-empty artifact at ${filePath}.`
-    );
-  }
-
-  return await readFile(filePath, "utf8");
 }
 
 function parseAnalysisArtifact(rawJson: string): CodexAnalysisArtifact {

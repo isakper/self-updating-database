@@ -43,6 +43,7 @@ describe("upload workspace model", () => {
       cleanDatabaseStatusBadge: "queued",
       headline: "forecast.xlsx imported",
       lastPipelineError: null,
+      latestQueryLogs: [],
       nextRetryLabel: null,
       pipelineStatusBadge: "queued",
       pipelineVersionLabel: "Pipeline version pending",

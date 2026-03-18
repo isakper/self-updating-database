@@ -85,7 +85,7 @@ export async function handleIngestionRequest(options: {
   return false;
 }
 
-async function readJsonBody(request: IncomingMessage): Promise<unknown> {
+export async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   const chunks: Uint8Array[] = [];
 
   for await (const chunk of request) {
@@ -96,7 +96,7 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   return JSON.parse(body);
 }
 
-function writeJson(
+export function writeJson(
   response: ServerResponse<IncomingMessage>,
   statusCode: number,
   payload: unknown
