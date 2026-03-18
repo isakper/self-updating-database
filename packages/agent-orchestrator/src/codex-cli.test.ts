@@ -1,6 +1,25 @@
-import { describe, expect, it } from "vitest";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { buildCodexPipelinePrompt } from "./codex-cli.js";
+import { afterEach, describe, expect, it } from "vitest";
+
+import {
+  buildCodexPipelinePrompt,
+  createCodexCliPipelineGenerator,
+} from "./codex-cli.js";
+
+const tempDirectories: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(
+    tempDirectories
+      .splice(0)
+      .map((directoryPath) =>
+        rm(directoryPath, { force: true, recursive: true })
+      )
+  );
+});
 
 describe("buildCodexPipelinePrompt", () => {
   it("describes the source database path, tables, and required artifacts", () => {
@@ -26,5 +45,58 @@ describe("buildCodexPipelinePrompt", () => {
     expect(prompt).toContain(
       'The runtime will ATTACH the source database as schema "source"'
     );
+  });
+
+  it("returns once required artifacts exist even if the codex process lingers", async () => {
+    const tempDirectory = await mkdtemp(join(tmpdir(), "codex-cli-test-"));
+    tempDirectories.push(tempDirectory);
+
+    const fakeCodexPath = join(tempDirectory, "fake-codex.mjs");
+    await writeFile(
+      fakeCodexPath,
+      `#!/usr/bin/env node
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+const cwdIndex = process.argv.indexOf("--cd");
+const cwd = cwdIndex >= 0 ? process.argv[cwdIndex + 1] : process.cwd();
+
+writeFileSync(join(cwd, "pipeline.sql"), "DROP TABLE IF EXISTS clean_orders;\\nCREATE TABLE clean_orders AS SELECT 1 AS ok;");
+writeFileSync(join(cwd, "analysis.json"), JSON.stringify({
+  sourceDatasetId: "dataset_1",
+  summary: "Generated from fake codex",
+  findings: [],
+}));
+writeFileSync(join(cwd, "summary.md"), "# Fake summary\\n");
+setInterval(() => {}, 1000);
+`,
+      "utf8"
+    );
+    await chmod(fakeCodexPath, 0o755);
+
+    const generator = createCodexCliPipelineGenerator({
+      artifactPollIntervalMs: 25,
+      codexCommand: fakeCodexPath,
+      commandTimeoutMs: 2_000,
+      processExitGracePeriodMs: 25,
+    });
+
+    const result = await generator.generatePipelineArtifacts({
+      sourceDatabasePath: ".data/source-datasets.sqlite",
+      sourceDatasetId: "dataset_1",
+      sourceSheets: [
+        {
+          sheetName: "Orders",
+          columnNames: ["Order ID"],
+          sourceTableName: "source_sheet_sheet_1",
+          rowCount: 1,
+        },
+      ],
+      workbookName: "sales.xlsx",
+    });
+
+    expect(result.sqlText).toContain("CREATE TABLE clean_orders");
+    expect(result.summaryMarkdown).toContain("Fake summary");
+    expect(result.analysisJson.sourceDatasetId).toBe("dataset_1");
   });
 });

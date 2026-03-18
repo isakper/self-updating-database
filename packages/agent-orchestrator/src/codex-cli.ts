@@ -8,7 +8,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
 import type {
   CodexAnalysisArtifact,
@@ -37,17 +37,23 @@ export interface CodexPipelineGenerator {
 }
 
 export interface CodexCliPipelineGeneratorOptions {
+  artifactPollIntervalMs?: number;
   codexCommand?: string;
+  commandTimeoutMs?: number;
   model?: string;
   playwrightMcpStartupTimeoutSec?: number;
+  processExitGracePeriodMs?: number;
 }
 
 export function createCodexCliPipelineGenerator(
   options: CodexCliPipelineGeneratorOptions = {}
 ): CodexPipelineGenerator {
   const codexCommand = options.codexCommand ?? "codex";
+  const artifactPollIntervalMs = options.artifactPollIntervalMs ?? 200;
+  const commandTimeoutMs = options.commandTimeoutMs ?? 120_000;
   const playwrightMcpStartupTimeoutSec =
     options.playwrightMcpStartupTimeoutSec ?? 1;
+  const processExitGracePeriodMs = options.processExitGracePeriodMs ?? 1_000;
 
   return {
     async generatePipelineArtifacts(input) {
@@ -79,7 +85,17 @@ export function createCodexCliPipelineGenerator(
             "-",
           ],
           prompt,
-          workspacePath
+          workspacePath,
+          [
+            join(workspacePath, "pipeline.sql"),
+            join(workspacePath, "analysis.json"),
+            join(workspacePath, "summary.md"),
+          ],
+          {
+            artifactPollIntervalMs,
+            commandTimeoutMs,
+            processExitGracePeriodMs,
+          }
         );
 
         const sqlText = await readRequiredArtifact(
@@ -112,33 +128,156 @@ async function runCodexCommand(
   codexCommand: string,
   args: string[],
   prompt: string,
-  cwd: string
+  cwd: string,
+  requiredArtifacts: string[],
+  options: {
+    artifactPollIntervalMs: number;
+    commandTimeoutMs: number;
+    processExitGracePeriodMs: number;
+  }
 ): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const child = spawn(codexCommand, args, {
       cwd,
       stdio: ["pipe", "pipe", "pipe"],
     });
+    let settled = false;
     let stderr = "";
+    let stdout = "";
+
+    const artifactPoll = setInterval(() => {
+      void checkArtifacts();
+    }, options.artifactPollIntervalMs);
+    const commandTimeout = setTimeout(() => {
+      finishWithError(
+        new Error(
+          [
+            `Codex CLI timed out after ${options.commandTimeoutMs}ms.`,
+            stderr && `stderr: ${stderr.trim()}`,
+            stdout && `stdout: ${stdout.trim()}`,
+          ]
+            .filter(Boolean)
+            .join(" ")
+        )
+      );
+    }, options.commandTimeoutMs);
+
+    function cleanup(): void {
+      clearInterval(artifactPoll);
+      clearTimeout(commandTimeout);
+    }
+
+    function finishWithSuccess(): void {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      cleanup();
+      void stopChildProcess(child, options.processExitGracePeriodMs);
+      resolve();
+    }
+
+    function finishWithError(error: Error): void {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      cleanup();
+      void stopChildProcess(child, options.processExitGracePeriodMs);
+      reject(error);
+    }
+
+    async function checkArtifacts(): Promise<void> {
+      if (settled) {
+        return;
+      }
+
+      if (await areArtifactsReady(requiredArtifacts)) {
+        finishWithSuccess();
+      }
+    }
 
     child.stderr.on("data", (chunk: Buffer | string) => {
       stderr += chunk.toString();
     });
 
-    child.on("error", reject);
+    child.stdout.on("data", (chunk: Buffer | string) => {
+      stdout += chunk.toString();
+    });
+
+    child.on("error", (error) => {
+      finishWithError(error);
+    });
+
     child.on("close", (code) => {
-      if (code === 0) {
-        resolve();
+      if (settled) {
         return;
       }
 
-      reject(
+      if (code === 0) {
+        void checkArtifacts().then(() => {
+          if (!settled) {
+            finishWithError(
+              new Error(
+                "Codex CLI exited successfully without writing the required artifacts."
+              )
+            );
+          }
+        });
+        return;
+      }
+
+      finishWithError(
         new Error(stderr || `Codex CLI exited with code ${code ?? "unknown"}.`)
       );
     });
 
     child.stdin.write(prompt);
     child.stdin.end();
+    void checkArtifacts();
+  });
+}
+
+async function areArtifactsReady(filePaths: string[]): Promise<boolean> {
+  const statuses = await Promise.all(
+    filePaths.map(async (filePath) => {
+      try {
+        const fileStat = await stat(filePath);
+        return fileStat.isFile() && fileStat.size > 0;
+      } catch {
+        return false;
+      }
+    })
+  );
+
+  return statuses.every(Boolean);
+}
+
+async function stopChildProcess(
+  child: ChildProcessWithoutNullStreams,
+  processExitGracePeriodMs: number
+): Promise<void> {
+  if (child.killed || child.exitCode !== null) {
+    return;
+  }
+
+  child.kill("SIGTERM");
+
+  await new Promise<void>((resolve) => {
+    const forceKillTimeout = setTimeout(() => {
+      if (!child.killed && child.exitCode === null) {
+        child.kill("SIGKILL");
+      }
+
+      resolve();
+    }, processExitGracePeriodMs);
+
+    child.once("close", () => {
+      clearTimeout(forceKillTimeout);
+      resolve();
+    });
   });
 }
 
