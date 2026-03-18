@@ -14,6 +14,11 @@ export function renderUploadWorkspacePage(options?: {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    ${
+      model?.shouldAutoRefresh
+        ? '<meta http-equiv="refresh" content="2" />'
+        : ""
+    }
     <title>Workbook Ingestion Workspace</title>
     <style>
       :root {
@@ -152,6 +157,20 @@ export function renderUploadWorkspacePage(options?: {
                 <h3>${escapeHtml(model.headline)}</h3>
                 <p>${escapeHtml(model.datasetLabel)}</p>
                 <p>${escapeHtml(model.totalRowsLabel)}</p>
+                <p><strong>Pipeline:</strong> ${escapeHtml(model.pipelineStatusBadge)}</p>
+                <p>${escapeHtml(model.pipelineVersionLabel)}</p>
+                <p><strong>Clean database:</strong> ${escapeHtml(model.cleanDatabaseStatusBadge)}</p>
+                <p>${escapeHtml(model.cleanDatabaseLabel)}</p>
+                ${
+                  model.nextRetryLabel
+                    ? `<p>${escapeHtml(model.nextRetryLabel)}</p>`
+                    : ""
+                }
+                ${
+                  model.lastPipelineError
+                    ? `<div class="error">${escapeHtml(model.lastPipelineError)}</div>`
+                    : ""
+                }
                 <ul>
                   ${model.sheetBreakdown
                     .map((sheet) => `<li>${escapeHtml(sheet)}</li>`)

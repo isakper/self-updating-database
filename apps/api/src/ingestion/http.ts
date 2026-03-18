@@ -1,10 +1,10 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import type { WorkbookUploadRequest } from "../../../../packages/shared/src/index.js";
-import type { InMemoryIngestionApi } from "./api.js";
+import type { IngestionApi } from "./api.js";
 
 export async function handleIngestionRequest(options: {
-  api: InMemoryIngestionApi;
+  api: IngestionApi;
   request: IncomingMessage;
   response: ServerResponse<IncomingMessage>;
 }): Promise<boolean> {
@@ -18,6 +18,28 @@ export async function handleIngestionRequest(options: {
 
   if (request.method === "GET" && requestUrl.pathname === "/api/imports") {
     writeJson(response, 200, { imports: api.listImports() });
+    return true;
+  }
+
+  if (
+    request.method === "GET" &&
+    requestUrl.pathname.startsWith("/api/imports/")
+  ) {
+    const datasetId = requestUrl.pathname.split("/").at(-1);
+
+    if (!datasetId) {
+      writeJson(response, 400, { error: "Dataset id is required." });
+      return true;
+    }
+
+    const summary = api.getImportSummary(datasetId);
+
+    if (!summary) {
+      writeJson(response, 404, { error: "Import summary not found." });
+      return true;
+    }
+
+    writeJson(response, 200, { summary });
     return true;
   }
 

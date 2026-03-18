@@ -37,6 +37,48 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<{
           return;
         }
 
+        if (
+          request.method === "GET" &&
+          requestUrl.pathname.startsWith("/imports/")
+        ) {
+          const datasetId = requestUrl.pathname.split("/").at(-1);
+
+          if (!datasetId) {
+            respondHtml(
+              response,
+              renderUploadWorkspacePage({
+                errorMessage: "Dataset id is required.",
+              }),
+              400
+            );
+            return;
+          }
+
+          const importResponse = await fetch(
+            `${apiBaseUrl}/api/imports/${datasetId}`
+          );
+          const payload = await readImportResponse(importResponse);
+
+          if (!importResponse.ok || !payload.summary) {
+            respondHtml(
+              response,
+              renderUploadWorkspacePage({
+                errorMessage: payload.error ?? "Import status not found.",
+              }),
+              importResponse.status
+            );
+            return;
+          }
+
+          respondHtml(
+            response,
+            renderUploadWorkspacePage({
+              importSummary: payload.summary,
+            })
+          );
+          return;
+        }
+
         if (request.method === "POST" && requestUrl.pathname === "/imports") {
           const workbookUpload = await readWorkbookUpload(request);
           const workbookRequest = parseWorkbookFile(workbookUpload);
@@ -64,12 +106,10 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<{
               return;
             }
 
-            respondHtml(
-              response,
-              renderUploadWorkspacePage({
-                importSummary: payload.summary,
-              })
-            );
+            response.writeHead(303, {
+              location: `/imports/${payload.summary.sourceDatasetId}`,
+            });
+            response.end();
             return;
           } catch (error) {
             respondHtml(

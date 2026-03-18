@@ -9,6 +9,7 @@ export interface SourceSheet {
   sheetId: string;
   name: string;
   columns: string[];
+  sourceTableName: string;
   rows: SourceRow[];
 }
 

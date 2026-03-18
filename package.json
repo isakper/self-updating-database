@@ -43,5 +43,9 @@
     "typescript-eslint": "^8.26.1",
     "vitest": "^3.0.8",
     "xlsx": "^0.18.5"
+  },
+  "dependencies": {
+    "@types/sql.js": "^1.4.9",
+    "sql.js": "^1.14.1"
   }
 }

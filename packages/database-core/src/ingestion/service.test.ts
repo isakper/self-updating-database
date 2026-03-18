@@ -35,6 +35,16 @@ describe("ingestion service", () => {
     });
 
     expect(result.summary).toStrictEqual({
+      processing: {
+        cleanDatabase: null,
+        cleanDatabaseStatus: "queued",
+        lastPipelineError: null,
+        nextRetryAt: null,
+        pipelineRetryCount: 0,
+        pipelineRun: null,
+        pipelineStatus: "queued",
+        pipelineVersion: null,
+      },
       sourceDatasetId: "dataset_1",
       workbookName: "finance.xlsx",
       status: "succeeded",
@@ -44,11 +54,13 @@ describe("ingestion service", () => {
         {
           sheetName: "Orders",
           columnNames: ["OrderId", "Amount", "Region"],
+          sourceTableName: "source_sheet_sheet_2",
           rowCount: 2,
         },
         {
           sheetName: "Customers",
           columnNames: ["CustomerId", "Segment"],
+          sourceTableName: "source_sheet_sheet_5",
           rowCount: 1,
         },
       ],
@@ -59,6 +71,7 @@ describe("ingestion service", () => {
       sheetId: "sheet_2",
       name: "Orders",
       columns: ["OrderId", "Amount", "Region"],
+      sourceTableName: "source_sheet_sheet_2",
     });
     expect(result.dataset.sheets[0]?.rows[0]).toStrictEqual({
       rowId: "row_3",

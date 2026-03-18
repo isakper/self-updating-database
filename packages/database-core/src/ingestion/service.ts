@@ -1,13 +1,14 @@
 import type {
+  ImportProcessingState,
   SourceSheetSummary,
   WorkbookImportSummary,
   WorkbookUploadRequest,
 } from "../../../shared/src/index.js";
-import type { SourceDatasetRepository } from "./repo.js";
+import type { IngestionRepository } from "./repo.js";
 import type { SourceDataset, SourceSheet } from "./types.js";
 
 export interface IngestWorkbookOptions {
-  repository: SourceDatasetRepository;
+  repository: IngestionRepository;
   request: WorkbookUploadRequest;
   now?: Date;
   createId?: (prefix: string) => string;
@@ -33,11 +34,13 @@ export function ingestWorkbook(
 
   const sheets = request.sheets.map((sheet) => {
     const columns = deriveColumnNames(sheet.rows);
+    const sheetId = createId("sheet");
 
     return {
-      sheetId: createId("sheet"),
+      sheetId,
       name: sheet.name,
       columns,
+      sourceTableName: `source_sheet_${sheetId}`,
       rows: sheet.rows.map((row, index) => ({
         rowId: createId("row"),
         sourceRowNumber: index + 1,
@@ -57,18 +60,26 @@ export function ingestWorkbook(
 
   return {
     dataset,
-    summary: createImportSummary(dataset),
+    summary: createWorkbookImportSummary(
+      dataset,
+      createQueuedImportProcessingState()
+    ),
   };
 }
 
-function createImportSummary(dataset: SourceDataset): WorkbookImportSummary {
+export function createWorkbookImportSummary(
+  dataset: SourceDataset,
+  processing: ImportProcessingState
+): WorkbookImportSummary {
   const sheets: SourceSheetSummary[] = dataset.sheets.map((sheet) => ({
     sheetName: sheet.name,
     columnNames: sheet.columns,
+    sourceTableName: sheet.sourceTableName,
     rowCount: sheet.rows.length,
   }));
 
   return {
+    processing,
     sourceDatasetId: dataset.id,
     workbookName: dataset.workbookName,
     status: "succeeded",
@@ -76,6 +87,19 @@ function createImportSummary(dataset: SourceDataset): WorkbookImportSummary {
     totalRowCount: sheets.reduce((sum, sheet) => sum + sheet.rowCount, 0),
     sheets,
     importedAt: dataset.importedAt,
+  };
+}
+
+export function createQueuedImportProcessingState(): ImportProcessingState {
+  return {
+    cleanDatabase: null,
+    cleanDatabaseStatus: "queued",
+    lastPipelineError: null,
+    nextRetryAt: null,
+    pipelineRetryCount: 0,
+    pipelineRun: null,
+    pipelineStatus: "queued",
+    pipelineVersion: null,
   };
 }
 

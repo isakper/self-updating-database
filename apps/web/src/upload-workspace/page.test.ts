@@ -6,8 +6,18 @@ import { renderUploadWorkspacePage } from "./page.js";
 describe("renderUploadWorkspacePage", () => {
   it("renders import summaries into the workspace page", () => {
     const summary: WorkbookImportSummary = {
+      processing: {
+        cleanDatabase: null,
+        cleanDatabaseStatus: "queued",
+        lastPipelineError: null,
+        nextRetryAt: null,
+        pipelineRetryCount: 0,
+        pipelineRun: null,
+        pipelineStatus: "queued",
+        pipelineVersion: null,
+      },
       sourceDatasetId: "dataset_1",
-      workbookName: "sales-workbook.json",
+      workbookName: "sales-workbook.xlsx",
       status: "succeeded",
       sheetCount: 1,
       totalRowCount: 2,
@@ -16,6 +26,7 @@ describe("renderUploadWorkspacePage", () => {
         {
           sheetName: "Orders",
           columnNames: ["OrderId", "Amount"],
+          sourceTableName: "source_sheet_sheet_1",
           rowCount: 2,
         },
       ],
@@ -23,8 +34,9 @@ describe("renderUploadWorkspacePage", () => {
 
     const html = renderUploadWorkspacePage({ importSummary: summary });
 
-    expect(html).toContain("sales-workbook.json imported");
+    expect(html).toContain("sales-workbook.xlsx imported");
     expect(html).toContain("Source dataset dataset_1");
     expect(html).toContain("Orders: 2 rows");
+    expect(html).toContain("Pipeline version pending");
   });
 });
