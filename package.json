@@ -9,7 +9,9 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev": "echo \"Configure app dev commands as apps land\"",
+    "dev": "pnpm exec tsx apps/dev-server.ts",
+    "dev:api": "pnpm exec tsx apps/api/src/runtime/server.ts",
+    "dev:web": "pnpm exec tsx apps/web/src/runtime/server.ts",
     "lint": "pnpm exec eslint .",
     "format": "pnpm exec prettier --write .",
     "format:check": "pnpm exec prettier --check .",
@@ -28,14 +30,22 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.22.0",
+    "@types/busboy": "^1.5.4",
     "@types/node": "^22.13.10",
+    "busboy": "^1.6.0",
     "eslint": "^9.22.0",
     "globals": "^16.0.0",
     "husky": "^9.1.7",
     "lint-staged": "^15.5.0",
     "prettier": "^3.5.3",
+    "tsx": "^4.20.3",
     "typescript": "^5.8.2",
     "typescript-eslint": "^8.26.1",
-    "vitest": "^3.0.8"
+    "vitest": "^3.0.8",
+    "xlsx": "^0.18.5"
+  },
+  "dependencies": {
+    "@types/sql.js": "^1.4.9",
+    "sql.js": "^1.14.1"
   }
 }

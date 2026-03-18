@@ -1,0 +1,29 @@
+{
+  "workbookName": "sales-workbook.json",
+  "sheets": [
+    {
+      "name": "Orders",
+      "rows": [
+        {
+          "OrderId": "A-1",
+          "Amount": 25,
+          "Region": "North"
+        },
+        {
+          "OrderId": "A-2",
+          "Amount": 30,
+          "Region": "South"
+        }
+      ]
+    },
+    {
+      "name": "Customers",
+      "rows": [
+        {
+          "CustomerId": "C-1",
+          "Segment": "Enterprise"
+        }
+      ]
+    }
+  ]
+}

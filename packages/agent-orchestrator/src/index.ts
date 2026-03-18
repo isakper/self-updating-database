@@ -1,4 +1,1 @@
-export interface AgentInvocation {
-  agent: "codex-cli";
-  prompt: string;
-}
+export * from "./codex-cli.js";

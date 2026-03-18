@@ -1,4 +1,2 @@
-export interface NaturalLanguageQueryRequest {
-  prompt: string;
-  sourceDatasetId: string;
-}
+export * from "./ingestion/contracts.js";
+export * from "./query/contracts.js";
