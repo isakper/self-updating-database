@@ -1,10 +1,12 @@
 # Execution Plan: Natural-Language Querying and Query Execution Logging
 
-Updated: 2026-03-17
+Updated: 2026-03-18
 
 ## Objective
 
 Deliver the first user-facing query experience: accept a natural-language question, translate it into SQL against the optimized query database, execute it, and store a rich query execution log for every attempt.
+
+This plan should also produce the core operator-facing surfaces needed to explain what happened during a query, so later demo transparency work can build on real execution data instead of inventing mock states.
 
 ## Non-goals
 
@@ -19,6 +21,7 @@ Deliver the first user-facing query experience: accept a natural-language questi
 - Expose a frontend query workspace with prompt input, SQL visibility, result display, and failure states.
 - Persist latency, cost-oriented metadata, execution outcome, and traceable identifiers for every query.
 - Add query history and diagnostics views for recent executions.
+- Preserve enough structured query-step metadata that the UI can later show a trustworthy execution timeline for demo and operator use.
 
 ## Validation
 
