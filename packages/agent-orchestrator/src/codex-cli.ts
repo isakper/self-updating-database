@@ -82,7 +82,7 @@ export function createCodexCliPipelineGenerator(
   const artifactPollIntervalMs = options.artifactPollIntervalMs ?? 200;
   const commandTimeoutMs = options.commandTimeoutMs ?? 120_000;
   const playwrightMcpStartupTimeoutSec =
-    options.playwrightMcpStartupTimeoutSec ?? 1;
+    options.playwrightMcpStartupTimeoutSec ?? 10;
   const processExitGracePeriodMs = options.processExitGracePeriodMs ?? 1_000;
 
   return {
@@ -240,6 +240,10 @@ Cleaning scope:
 - allow high-confidence spelling/value normalization when justified by observed data
 - do not invent new business meaning
 - do not drop rows unless absolutely required and explicitly justified
+- optimize for a clean-database schema that is easy for an LLM to understand and query
+- prefer a small number of clear, well-named tables over many narrow or redundant tables
+- do not add new tables or columns unless they meaningfully simplify likely queries
+- avoid schema changes that make the database more fragmented or harder for an LLM to navigate
 
 Output contract:
 1. Write pipeline.sql in the current working directory.
@@ -253,6 +257,7 @@ SQL contract for pipeline.sql:
 - Allowed statements:
   - CREATE TABLE ... AS SELECT ...
   - CREATE VIEW ... AS SELECT ...
+  - CREATE INDEX ... ON clean-database objects
   - INSERT INTO ... SELECT ...
   - DROP TABLE IF EXISTS ...
   - DROP VIEW IF EXISTS ...
@@ -265,6 +270,7 @@ SQL contract for pipeline.sql:
   - DETACH
   - PRAGMA
   - writes to source.*
+  - indexes on source.*
   - filesystem or shell side effects
 
 analysis.json contract:

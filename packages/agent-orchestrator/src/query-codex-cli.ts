@@ -47,7 +47,7 @@ export function createCodexCliQueryGenerator(
   const artifactPollIntervalMs = options.artifactPollIntervalMs ?? 200;
   const commandTimeoutMs = options.commandTimeoutMs ?? 120_000;
   const playwrightMcpStartupTimeoutSec =
-    options.playwrightMcpStartupTimeoutSec ?? 1;
+    options.playwrightMcpStartupTimeoutSec ?? 10;
   const processExitGracePeriodMs = options.processExitGracePeriodMs ?? 1_000;
 
   return {

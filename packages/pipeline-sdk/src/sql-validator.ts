@@ -6,10 +6,13 @@ export interface PipelineSqlValidationResult {
 const FORBIDDEN_PATTERN =
   /\b(update|delete|alter|attach|detach|pragma|vacuum|reindex|begin|commit|rollback)\b/i;
 const FORBIDDEN_SOURCE_WRITE_PATTERN =
-  /\b(create\s+(table|view)|insert\s+into|drop\s+(table|view))(?:\s+if\s+exists)?\s+source\./i;
+  /\b(?:create\s+(?:table|view)|insert\s+into|drop\s+(?:table|view))(?:\s+if\s+exists)?\s+source\./i;
+const FORBIDDEN_SOURCE_INDEX_PATTERN =
+  /\bcreate\s+(?:unique\s+)?index\b[\s\S]*?\bon\s+source\./i;
 const ALLOWED_STATEMENT_PATTERNS = [
   /^create\s+table\s+/i,
   /^create\s+view\s+/i,
+  /^create\s+(unique\s+)?index\s+(if\s+not\s+exists\s+)?/i,
   /^insert\s+into\s+/i,
   /^drop\s+table\s+if\s+exists\s+/i,
   /^drop\s+view\s+if\s+exists\s+/i,
@@ -35,6 +38,10 @@ export function validatePipelineSql(
 
   if (FORBIDDEN_SOURCE_WRITE_PATTERN.test(trimmedSql)) {
     errors.push("Pipeline SQL must not write to source.* tables or views.");
+  }
+
+  if (FORBIDDEN_SOURCE_INDEX_PATTERN.test(trimmedSql)) {
+    errors.push("Pipeline SQL must not create indexes on source.* objects.");
   }
 
   splitSqlStatements(trimmedSql).forEach((statement) => {

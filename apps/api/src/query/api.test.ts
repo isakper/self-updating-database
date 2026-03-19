@@ -1,13 +1,18 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import { InMemorySourceDatasetRepository } from "../../../../packages/database-core/src/index.js";
 import { ingestWorkbook } from "../../../../packages/database-core/src/ingestion/service.js";
 import type { WorkbookUploadRequest } from "../../../../packages/shared/src/index.js";
+import { parseWorkbookFile } from "../../../web/src/upload-workspace/parse-workbook-file.js";
 import { createQueryApi, QueryApiError } from "./api.js";
 
 describe("query api", () => {
   it("generates SQL, executes against the clean database, and logs the query", async () => {
     const repository = seedRepository();
+    const scheduledDatasets: string[] = [];
     const queryApi = createQueryApi({
       createId: (() => {
         let counter = 0;
@@ -19,6 +24,11 @@ describe("query api", () => {
         "2026-03-18T12:00:01.100Z",
         "2026-03-18T12:00:01.250Z",
       ]),
+      queryLearningLoop: {
+        schedule(sourceDatasetId) {
+          scheduledDatasets.push(sourceDatasetId);
+        },
+      },
       queryExecutor: {
         executeQuery() {
           return Promise.resolve({
@@ -60,11 +70,16 @@ describe("query api", () => {
     expect(response.generatedSqlRecord?.generator).toBe("openai_responses");
     expect(response.result?.rows).toStrictEqual([["North", 25]]);
     expect(repository.listQueryExecutionLogs("dataset_1")).toHaveLength(1);
-    expect(repository.listQueryExecutionLogs("dataset_1")[0]).toMatchObject({
-      cleanDatabaseId: "clean_db_1",
-      rowCount: 1,
-      status: "succeeded",
-    });
+    const storedLog = repository.listQueryExecutionLogs("dataset_1")[0];
+    expect(storedLog?.cleanDatabaseId).toBe("clean_db_1");
+    expect(storedLog?.matchedClusterId).toMatch(/^query_cluster_clean_db_1_/);
+    expect(storedLog?.optimizationEligible).toBe(true);
+    expect(storedLog?.patternFingerprint).toEqual(expect.any(String));
+    expect(storedLog?.queryKind).toBe("aggregate");
+    expect(storedLog?.rowCount).toBe(1);
+    expect(storedLog?.status).toBe("succeeded");
+    expect(storedLog?.usedOptimizationObjects).toStrictEqual([]);
+    expect(scheduledDatasets).toStrictEqual(["dataset_1"]);
     expect(
       repository
         .listCodexRunEvents("dataset_1")
@@ -122,6 +137,68 @@ describe("query api", () => {
       errorMessage: "Generated query SQL contains a forbidden SQL statement.",
       status: "failed",
     });
+  });
+
+  it("imports mock query logs from the demo workbook and schedules learning", () => {
+    const repository = seedRepository();
+    const scheduledDatasets: string[] = [];
+    const queryApi = createQueryApi({
+      createId: (() => {
+        let counter = 0;
+        return (prefix: string) => `${prefix}_${++counter}`;
+      })(),
+      queryExecutor: {
+        executeQuery() {
+          throw new Error("not used");
+        },
+      },
+      queryGenerator: {
+        generateSql() {
+          throw new Error("not used");
+        },
+      },
+      queryLearningLoop: {
+        schedule(sourceDatasetId) {
+          scheduledDatasets.push(sourceDatasetId);
+        },
+      },
+      repository,
+      sqlValidator: {
+        validate() {
+          return {
+            errors: [],
+            isValid: true,
+          };
+        },
+      },
+    });
+
+    const workbook = parseWorkbookFile({
+      fileBuffer: readFileSync(
+        resolve(
+          "apps/web/fixtures/demo-workbooks/retailer-transactions-demo-query-logs.xlsx"
+        )
+      ),
+      fileName: "retailer-transactions-demo-query-logs.xlsx",
+    });
+    const imported = queryApi.importQueryLogs({
+      sourceDatasetId: "dataset_1",
+      workbook,
+    });
+    const importedLogs = repository.listQueryExecutionLogs("dataset_1");
+
+    expect(imported.importedCount).toBe(20);
+    expect(importedLogs).toHaveLength(20);
+    expect(
+      importedLogs.every((log) => log.cleanDatabaseId === "clean_db_1")
+    ).toBe(true);
+    expect(
+      importedLogs.every((log) => log.sourceDatasetId === "dataset_1")
+    ).toBe(true);
+    expect(importedLogs.every((log) => log.patternFingerprint !== null)).toBe(
+      true
+    );
+    expect(scheduledDatasets).toStrictEqual(["dataset_1"]);
   });
 });
 

@@ -1,8 +1,11 @@
 import { resolve } from "node:path";
 import { createServer } from "node:http";
 
-import { createCodexCliPipelineGenerator } from "../../../../packages/agent-orchestrator/src/index.js";
-import { createOpenAiSqlQueryGenerator } from "../../../../packages/agent-orchestrator/src/index.js";
+import {
+  createCodexCliOptimizationGenerator,
+  createCodexCliPipelineGenerator,
+  createOpenAiSqlQueryGenerator,
+} from "../../../../packages/agent-orchestrator/src/index.js";
 import {
   openSourceDatabase,
   SqliteSourceDatasetRepository,
@@ -16,6 +19,9 @@ import {
 import { createIngestionApi } from "../ingestion/api.js";
 import { handleIngestionRequest } from "../ingestion/http.js";
 import { createPipelineRetryScheduler } from "../ingestion/pipeline.js";
+import { createOptimizationApi } from "../optimization/api.js";
+import { handleOptimizationRequest } from "../optimization/http.js";
+import { createQueryLearningLoop } from "../optimization/service.js";
 import { createQueryApi } from "../query/api.js";
 import { handleQueryRequest } from "../query/http.js";
 import { createCodexRunEventHub } from "./codex-run-events.js";
@@ -63,10 +69,28 @@ export async function startApiServer(options: ApiServerOptions = {}): Promise<{
     pipelineRetryScheduler,
     repository,
   });
+  const queryLearningLoop = createQueryLearningLoop({
+    cleanDatabaseBuilder: createSqliteCleanDatabaseBuilder(),
+    cleanDatabaseDirectoryPath: resolve(
+      options.cleanDatabaseDirectoryPath ??
+        process.env.CLEAN_DATABASE_DIRECTORY_PATH ??
+        ".data/clean-databases"
+    ),
+    codexOptimizationGenerator: createCodexCliOptimizationGenerator(),
+    onRunEvent: (runEvent) => {
+      codexRunEventHub.publish(runEvent);
+    },
+    repository,
+    sourceDatabasePath: database.databaseFilePath,
+    sqlValidator: {
+      validate: validatePipelineSql,
+    },
+  });
   const queryApi = createQueryApi({
     onRunEvent: (runEvent) => {
       codexRunEventHub.publish(runEvent);
     },
+    queryLearningLoop,
     queryExecutor: createSqliteQueryExecutor(),
     queryGenerator: createOpenAiSqlQueryGenerator(),
     repository,
@@ -74,9 +98,15 @@ export async function startApiServer(options: ApiServerOptions = {}): Promise<{
       validate: validateQuerySql,
     },
   });
+  const optimizationApi = createOptimizationApi({
+    repository,
+  });
   const port = options.port ?? Number(process.env.API_PORT ?? "3001");
 
   pipelineRetryScheduler.resumePendingWork();
+  repository.list().forEach((dataset) => {
+    queryLearningLoop.schedule(dataset.id);
+  });
 
   const server = createServer((request, response) => {
     void (async () => {
@@ -112,6 +142,16 @@ export async function startApiServer(options: ApiServerOptions = {}): Promise<{
         });
 
         if (handledQueryRequest) {
+          return;
+        }
+
+        const handledOptimizationRequest = handleOptimizationRequest({
+          api: optimizationApi,
+          request,
+          response,
+        });
+
+        if (handledOptimizationRequest) {
           return;
         }
 
@@ -154,8 +194,13 @@ export async function startApiServer(options: ApiServerOptions = {}): Promise<{
           pipelineRetryScheduler
             .drain()
             .then(() => {
-              database.close();
-              resolve();
+              queryLearningLoop
+                .drain()
+                .then(() => {
+                  database.close();
+                  resolve();
+                })
+                .catch(reject);
             })
             .catch(reject);
         });

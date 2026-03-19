@@ -16,6 +16,14 @@ describe("buildSqlGenerationPrompt", () => {
       {
         cleanDatabaseId: "clean_db_1",
         cleanDatabasePath: ".data/clean.sqlite",
+        optimizationHints: [
+          {
+            guidance: "Prefer agg_orders_by_region.",
+            preferredObjects: ["agg_orders_by_region"],
+            queryClusterId: "query_cluster_1",
+            title: "Regional totals",
+          },
+        ],
         prompt: "Show total revenue by region",
         sourceDatasetId: "dataset_1",
       },
@@ -29,6 +37,8 @@ describe("buildSqlGenerationPrompt", () => {
     expect(prompt).toContain("User question:");
     expect(prompt).toContain("Return only SQL.");
     expect(prompt).toContain("TABLE orders");
+    expect(prompt).toContain("Optimization hints:");
+    expect(prompt).toContain("agg_orders_by_region");
     expect(prompt).toContain("must start with SELECT or WITH");
     expect(prompt).toContain("not a SQL schema name");
   });

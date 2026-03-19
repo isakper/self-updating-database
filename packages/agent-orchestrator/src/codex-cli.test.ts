@@ -101,7 +101,7 @@ setInterval(() => {}, 1000);
     const generator = createCodexCliPipelineGenerator({
       artifactPollIntervalMs: 25,
       codexCommand: fakeCodexPath,
-      commandTimeoutMs: 2_000,
+      commandTimeoutMs: 5_000,
       processExitGracePeriodMs: 25,
     });
 
