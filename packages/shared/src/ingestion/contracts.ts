@@ -24,7 +24,7 @@ export type PipelineStatus = "queued" | "running" | "succeeded" | "failed";
 
 export type CleanDatabaseStatus = "queued" | "running" | "succeeded" | "failed";
 
-export type CodexRunScope = "pipeline" | "query";
+export type CodexRunScope = "pipeline" | "query" | "optimization";
 
 export type CodexRunStream = "stderr" | "stdout" | "system";
 

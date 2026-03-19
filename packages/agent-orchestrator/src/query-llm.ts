@@ -2,9 +2,12 @@ import { readFile } from "node:fs/promises";
 
 import initSqlJs, { type Database } from "sql.js";
 
+import type { OptimizationHint } from "../../shared/src/index.js";
+
 export interface GenerateQueryTextOptions {
   cleanDatabaseId: string;
   cleanDatabasePath: string;
+  optimizationHints?: OptimizationHint[];
   onDelta?: (chunk: string) => void;
   prompt: string;
   sourceDatasetId: string;
@@ -134,6 +137,16 @@ export function buildSqlGenerationPrompt(
   options: GenerateQueryTextOptions,
   databaseContext: CleanDatabaseContext
 ): string {
+  const optimizationHints =
+    options.optimizationHints && options.optimizationHints.length > 0
+      ? `\nOptimization hints:\n${options.optimizationHints
+          .map(
+            (hint) =>
+              `- ${hint.title}: ${hint.guidance} Prefer objects ${hint.preferredObjects.join(", ")} when the question matches cluster ${hint.queryClusterId}.`
+          )
+          .join("\n")}`
+      : "";
+
   return `You generate one SQLite SQL query for an analytics database.
 
 Dataset:
@@ -145,6 +158,7 @@ ${options.prompt}
 
 Clean database schema:
 ${databaseContext.schemaDescription}
+${optimizationHints}
 
 Rules:
 - Return only SQL.

@@ -1,11 +1,13 @@
-import { createServer } from "node:http";
+import { createServer, request as httpRequest } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { once } from "node:events";
+import { request as httpsRequest } from "node:https";
 
 import type {
   NaturalLanguageQueryResponse,
   QueryExecutionLog,
   WorkbookImportSummary,
+  WorkbookUploadRequest,
 } from "../../../../packages/shared/src/index.js";
 import { parseWorkbookFile } from "../upload-workspace/parse-workbook-file.js";
 import {
@@ -104,23 +106,28 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<{
             return;
           }
 
-          const importResponse = await fetch(
-            `${apiBaseUrl}/api/imports/${datasetId}`
-          );
-          const payload = await readImportResponse(importResponse);
-          const queryLogsResponse = await fetch(
-            `${apiBaseUrl}/api/query-logs/${datasetId}`
-          );
-          const queryLogsPayload =
-            await readQueryLogsResponse(queryLogsResponse);
+          const { payload, statusCode } = await requestJsonFromApi<{
+            error?: string;
+            summary?: WorkbookImportSummary;
+          }>({
+            validate: isImportResponse,
+            url: `${apiBaseUrl}/api/imports/${datasetId}`,
+          });
+          const queryLogsPayload = await requestJsonFromApi<{
+            error?: string;
+            queryLogs?: QueryExecutionLog[];
+          }>({
+            validate: isQueryLogsResponse,
+            url: `${apiBaseUrl}/api/query-logs/${datasetId}`,
+          });
 
-          if (!importResponse.ok || !payload.summary) {
+          if (statusCode < 200 || statusCode >= 300 || !payload.summary) {
             respondHtml(
               response,
               renderUploadWorkspacePage({
                 errorMessage: payload.error ?? "Import status not found.",
               }),
-              importResponse.status
+              statusCode
             );
             return;
           }
@@ -128,8 +135,9 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<{
           respondHtml(
             response,
             renderUploadWorkspacePage({
+              activeTab: parseRequestedTab(requestUrl.searchParams.get("tab")),
               importSummary: payload.summary,
-              queryLogs: queryLogsPayload.queryLogs ?? [],
+              queryLogs: queryLogsPayload.payload.queryLogs ?? [],
             })
           );
           return;
@@ -164,23 +172,26 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<{
           const workbookJson = JSON.stringify(workbookRequest);
 
           try {
-            const importResponse = await fetch(`${apiBaseUrl}/api/imports`, {
-              method: "POST",
+            const { payload, statusCode } = await requestJsonFromApi<{
+              error?: string;
+              summary?: WorkbookImportSummary;
+            }>({
+              body: workbookJson,
               headers: {
                 "content-type": "application/json; charset=utf-8",
               },
-              body: workbookJson,
+              method: "POST",
+              validate: isImportResponse,
+              url: `${apiBaseUrl}/api/imports`,
             });
 
-            const payload = await readImportResponse(importResponse);
-
-            if (!importResponse.ok || !payload.summary) {
+            if (statusCode < 200 || statusCode >= 300 || !payload.summary) {
               respondHtml(
                 response,
                 renderUploadWorkspacePage({
                   errorMessage: payload.error ?? "Import failed.",
                 }),
-                importResponse.status
+                statusCode
               );
               return;
             }
@@ -198,6 +209,62 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<{
                   error instanceof Error ? error.message : "Import failed.",
               }),
               500
+            );
+            return;
+          }
+        }
+
+        if (
+          request.method === "POST" &&
+          requestUrl.pathname.startsWith("/imports/") &&
+          requestUrl.pathname.endsWith("/query-logs/import")
+        ) {
+          const datasetId = requestUrl.pathname.split("/").at(-2);
+
+          if (!datasetId) {
+            respondHtml(
+              response,
+              renderUploadWorkspacePage({
+                activeTab: "logs",
+                errorMessage: "Dataset id is required.",
+              }),
+              400
+            );
+            return;
+          }
+
+          const workbookUpload = await readWorkbookUpload(request);
+          const workbookRequest = parseWorkbookFile(workbookUpload);
+
+          try {
+            const imported = await importQueryLogs({
+              apiBaseUrl,
+              datasetId,
+              workbookRequest,
+            });
+
+            response.writeHead(303, {
+              location: `/imports/${datasetId}?tab=logs&imported=${imported.importedCount}`,
+            });
+            response.end();
+            return;
+          } catch (error) {
+            const viewState = await fetchViewState(apiBaseUrl, datasetId);
+
+            respondHtml(
+              response,
+              renderUploadWorkspacePage({
+                activeTab: "logs",
+                ...(viewState.importSummary
+                  ? { importSummary: viewState.importSummary }
+                  : {}),
+                queryLogs: viewState.queryLogs,
+                queryLogsErrorMessage:
+                  error instanceof Error
+                    ? error.message
+                    : "Mock query-log import failed.",
+              }),
+              400
             );
             return;
           }
@@ -234,37 +301,49 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<{
           }
 
           try {
-            const queryResponse = await fetch(`${apiBaseUrl}/api/queries`, {
-              method: "POST",
+            const queryRequestBody = JSON.stringify({
+              prompt,
+              sourceDatasetId: datasetId,
+            });
+            const { payload, statusCode } = await requestJsonFromApi<{
+              error?: string;
+              generatedSqlRecord?: NaturalLanguageQueryResponse["generatedSqlRecord"];
+              queryLog?: NaturalLanguageQueryResponse["queryLog"];
+              queryResult?: NaturalLanguageQueryResponse;
+            }>({
+              body: queryRequestBody,
               headers: {
                 "content-type": "application/json; charset=utf-8",
               },
-              body: JSON.stringify({
-                prompt,
-                sourceDatasetId: datasetId,
-              }),
+              method: "POST",
+              validate: isQueryResponse,
+              url: `${apiBaseUrl}/api/queries`,
             });
-            const payload = await readQueryResponse(queryResponse);
-            const queryLogsResponse = await fetch(
-              `${apiBaseUrl}/api/query-logs/${datasetId}`
-            );
-            const queryLogsPayload =
-              await readQueryLogsResponse(queryLogsResponse);
+            const queryLogsPayload = await requestJsonFromApi<{
+              error?: string;
+              queryLogs?: QueryExecutionLog[];
+            }>({
+              validate: isQueryLogsResponse,
+              url: `${apiBaseUrl}/api/query-logs/${datasetId}`,
+            });
             const fragments = renderWorkspaceFragments({
               importSummary: importViewState.importSummary,
-              ...(!queryResponse.ok || !payload.queryResult
+              ...(statusCode < 200 || statusCode >= 300 || !payload.queryResult
                 ? { queryErrorMessage: payload.error ?? "Query failed." }
                 : {}),
-              queryLogs: queryLogsPayload.queryLogs ?? [],
+              queryLogs: queryLogsPayload.payload.queryLogs ?? [],
               queryPrompt: prompt,
               ...(payload.queryResult
                 ? { queryResponse: payload.queryResult }
                 : {}),
             });
 
-            response.writeHead(queryResponse.ok ? 200 : queryResponse.status, {
-              "content-type": "application/json; charset=utf-8",
-            });
+            response.writeHead(
+              statusCode >= 200 && statusCode < 300 ? 200 : statusCode,
+              {
+                "content-type": "application/json; charset=utf-8",
+              }
+            );
             response.end(
               JSON.stringify({
                 ...fragments,
@@ -313,36 +392,51 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<{
           }
 
           const prompt = await readFormField(request, "prompt");
-          const importResponse = await fetch(
-            `${apiBaseUrl}/api/imports/${datasetId}`
-          );
-          const importPayload = await readImportResponse(importResponse);
+          const { payload: importPayload, statusCode: importStatusCode } =
+            await requestJsonFromApi<{
+              error?: string;
+              summary?: WorkbookImportSummary;
+            }>({
+              url: `${apiBaseUrl}/api/imports/${datasetId}`,
+              validate: isImportResponse,
+            });
 
-          if (!importResponse.ok || !importPayload.summary) {
+          if (
+            importStatusCode < 200 ||
+            importStatusCode >= 300 ||
+            !importPayload.summary
+          ) {
             respondHtml(
               response,
               renderUploadWorkspacePage({
                 errorMessage: importPayload.error ?? "Import status not found.",
               }),
-              importResponse.status
+              importStatusCode
             );
             return;
           }
 
           try {
-            const queryResponse = await fetch(`${apiBaseUrl}/api/queries`, {
-              method: "POST",
+            const queryRequestBody = JSON.stringify({
+              prompt,
+              sourceDatasetId: datasetId,
+            });
+            const { payload, statusCode } = await requestJsonFromApi<{
+              error?: string;
+              generatedSqlRecord?: NaturalLanguageQueryResponse["generatedSqlRecord"];
+              queryLog?: NaturalLanguageQueryResponse["queryLog"];
+              queryResult?: NaturalLanguageQueryResponse;
+            }>({
+              body: queryRequestBody,
               headers: {
                 "content-type": "application/json; charset=utf-8",
               },
-              body: JSON.stringify({
-                prompt,
-                sourceDatasetId: datasetId,
-              }),
+              method: "POST",
+              validate: isQueryResponse,
+              url: `${apiBaseUrl}/api/queries`,
             });
-            const payload = await readQueryResponse(queryResponse);
 
-            if (!queryResponse.ok || !payload.queryResult) {
+            if (statusCode < 200 || statusCode >= 300 || !payload.queryResult) {
               respondHtml(
                 response,
                 renderUploadWorkspacePage(
@@ -365,7 +459,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<{
                         queryPrompt: prompt,
                       }
                 ),
-                queryResponse.status
+                statusCode
               );
               return;
             }
@@ -402,7 +496,14 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<{
         response.end("Not found");
       } catch (error) {
         console.error("Web server request failed", error);
-        respondHtml(response, "<h1>Internal server error</h1>", 500);
+        if (!response.headersSent) {
+          respondHtml(response, "<h1>Internal server error</h1>", 500);
+          return;
+        }
+
+        if (!response.writableEnded) {
+          response.end();
+        }
       }
     })();
   });
@@ -427,6 +528,37 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<{
   };
 }
 
+async function importQueryLogs(options: {
+  apiBaseUrl: string;
+  datasetId: string;
+  workbookRequest: WorkbookUploadRequest;
+}): Promise<{ importedCount: number }> {
+  const { payload, statusCode } = await requestJsonFromApi<{
+    error?: string;
+    importedCount?: number;
+  }>({
+    body: JSON.stringify(options.workbookRequest),
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+    },
+    method: "POST",
+    url: `${options.apiBaseUrl}/api/query-logs/${options.datasetId}/import`,
+    validate: isQueryLogImportResponse,
+  });
+
+  if (
+    statusCode < 200 ||
+    statusCode >= 300 ||
+    payload.importedCount === undefined
+  ) {
+    throw new Error(payload.error ?? "Mock query-log import failed.");
+  }
+
+  return {
+    importedCount: payload.importedCount,
+  };
+}
+
 async function fetchViewState(
   apiBaseUrl: string,
   datasetId: string
@@ -436,16 +568,24 @@ async function fetchViewState(
   queryLogs: QueryExecutionLog[];
   statusCode: number;
 }> {
-  const importResponse = await fetch(`${apiBaseUrl}/api/imports/${datasetId}`);
-  const payload = await readImportResponse(importResponse);
-  const queryLogsResponse = await fetch(
-    `${apiBaseUrl}/api/query-logs/${datasetId}`
-  );
-  const queryLogsPayload = await readQueryLogsResponse(queryLogsResponse);
+  const { payload, statusCode } = await requestJsonFromApi<{
+    error?: string;
+    summary?: WorkbookImportSummary;
+  }>({
+    validate: isImportResponse,
+    url: `${apiBaseUrl}/api/imports/${datasetId}`,
+  });
+  const queryLogsPayload = await requestJsonFromApi<{
+    error?: string;
+    queryLogs?: QueryExecutionLog[];
+  }>({
+    validate: isQueryLogsResponse,
+    url: `${apiBaseUrl}/api/query-logs/${datasetId}`,
+  });
 
   return {
-    queryLogs: queryLogsPayload.queryLogs ?? [],
-    statusCode: importResponse.status,
+    queryLogs: queryLogsPayload.payload.queryLogs ?? [],
+    statusCode,
     ...(payload.error ? { error: payload.error } : {}),
     ...(payload.summary ? { importSummary: payload.summary } : {}),
   };
@@ -502,45 +642,63 @@ async function proxyEventStream(options: {
   }
 }
 
-async function readImportResponse(response: Response): Promise<{
-  error?: string;
-  summary?: WorkbookImportSummary;
-}> {
-  const payload: unknown = await response.json();
+async function requestJsonFromApi<T>(options: {
+  body?: string;
+  headers?: Record<string, string>;
+  method?: "GET" | "POST";
+  url: string;
+  validate?: (value: unknown) => value is T;
+}): Promise<{ payload: T; statusCode: number }> {
+  const url = new URL(options.url);
+  const requestFn = url.protocol === "https:" ? httpsRequest : httpRequest;
 
-  if (!isImportResponse(payload)) {
-    throw new Error("Import API returned an unexpected response.");
-  }
+  return await new Promise((resolve, reject) => {
+    const request = requestFn(
+      url,
+      {
+        headers: options.headers,
+        method: options.method ?? "GET",
+      },
+      (response) => {
+        const chunks: Uint8Array[] = [];
 
-  return payload;
-}
+        response.on("data", (chunk: Buffer | string) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        });
+        response.on("end", () => {
+          try {
+            const body = Buffer.concat(chunks).toString("utf8");
+            const parsed: unknown = JSON.parse(body);
 
-async function readQueryResponse(response: Response): Promise<{
-  error?: string;
-  generatedSqlRecord?: NaturalLanguageQueryResponse["generatedSqlRecord"];
-  queryLog?: NaturalLanguageQueryResponse["queryLog"];
-  queryResult?: NaturalLanguageQueryResponse;
-}> {
-  const payload: unknown = await response.json();
+            if (options.validate && !options.validate(parsed)) {
+              reject(new Error("API returned an unexpected response."));
+              return;
+            }
 
-  if (!isQueryResponse(payload)) {
-    throw new Error("Query API returned an unexpected response.");
-  }
+            resolve({
+              payload: parsed as T,
+              statusCode: response.statusCode ?? 500,
+            });
+          } catch (error) {
+            reject(
+              error instanceof Error
+                ? error
+                : new Error("API response could not be parsed.")
+            );
+          }
+        });
+        response.on("error", reject);
+      }
+    );
 
-  return payload;
-}
+    request.on("error", reject);
 
-async function readQueryLogsResponse(response: Response): Promise<{
-  error?: string;
-  queryLogs?: QueryExecutionLog[];
-}> {
-  const payload: unknown = await response.json();
+    if (options.body) {
+      request.write(options.body);
+    }
 
-  if (!isQueryLogsResponse(payload)) {
-    throw new Error("Query log API returned an unexpected response.");
-  }
-
-  return payload;
+    request.end();
+  });
 }
 
 function isImportResponse(
@@ -602,6 +760,29 @@ function isQueryLogsResponse(
   return true;
 }
 
+function isQueryLogImportResponse(
+  value: unknown
+): value is { error?: string; importedCount?: number } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+
+  if ("error" in candidate && typeof candidate.error !== "string") {
+    return false;
+  }
+
+  if (
+    "importedCount" in candidate &&
+    typeof candidate.importedCount !== "number"
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
 async function readFormField(
   request: IncomingMessage,
   fieldName: string
@@ -631,6 +812,14 @@ function respondHtml(
     "content-type": "text/html; charset=utf-8",
   });
   response.end(html);
+}
+
+function parseRequestedTab(value: string | null): "logs" | "query" | "upload" {
+  if (value === "query" || value === "logs") {
+    return value;
+  }
+
+  return "upload";
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

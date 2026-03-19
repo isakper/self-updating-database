@@ -6,15 +6,20 @@ import type {
 import { buildUploadWorkspaceModel } from "./model.js";
 import { buildQueryWorkspaceModel } from "../query-workspace/model.js";
 
+type WorkspaceTabName = "upload" | "query" | "logs";
+
 export function renderUploadWorkspacePage(options?: {
+  activeTab?: WorkspaceTabName;
   importSummary?: WorkbookImportSummary;
   queryLogs?: QueryExecutionLog[];
   errorMessage?: string;
   queryErrorMessage?: string;
+  queryLogsErrorMessage?: string;
   queryPrompt?: string;
   queryResponse?: NaturalLanguageQueryResponse;
 }): string {
   const sourceDatasetId = options?.importSummary?.sourceDatasetId ?? null;
+  const activeTab = options?.activeTab ?? "upload";
   const fragments = renderWorkspaceFragments(options);
 
   return `<!doctype html>
@@ -32,17 +37,18 @@ export function renderUploadWorkspacePage(options?: {
       }
       body {
         margin: 0;
+        min-height: 100vh;
         background:
           radial-gradient(circle at top, rgba(214, 177, 91, 0.22), transparent 28%),
           linear-gradient(180deg, #f6f1e7 0%, #efe7d8 100%);
       }
       main {
-        max-width: 960px;
+        max-width: none;
         margin: 0 auto;
-        padding: 48px 24px 80px;
+        padding: 0;
       }
       .hero {
-        margin-bottom: 32px;
+        display: none;
       }
       .eyebrow {
         text-transform: uppercase;
@@ -65,6 +71,74 @@ export function renderUploadWorkspacePage(options?: {
         display: grid;
         gap: 24px;
         grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      }
+      .workspace-shell {
+        display: grid;
+        gap: 0;
+        grid-template-columns: 320px minmax(0, 1fr);
+        min-height: 100vh;
+      }
+      .workspace-nav {
+        min-height: 100vh;
+        padding: 32px 24px;
+        background: linear-gradient(180deg, rgba(28, 26, 23, 0.96) 0%, rgba(42, 35, 24, 0.96) 100%);
+        color: #fff8eb;
+      }
+      .nav-card {
+        position: sticky;
+        top: 24px;
+        display: grid;
+        gap: 18px;
+      }
+      .nav-card h2 {
+        margin: 0;
+        font-size: 2.3rem;
+        line-height: 0.95;
+      }
+      .nav-card p {
+        margin: 0;
+        max-width: 20ch;
+        color: rgba(255, 248, 235, 0.72);
+      }
+      .nav-list {
+        display: grid;
+        gap: 12px;
+      }
+      .nav-tab {
+        width: 100%;
+        margin: 0;
+        text-align: left;
+        border-radius: 22px;
+        padding: 18px;
+        background: rgba(255, 248, 235, 0.08);
+        color: #fff8eb;
+        border: 1px solid rgba(255, 248, 235, 0.12);
+      }
+      .nav-tab[data-active="true"] {
+        background: #fff4da;
+        color: #231d15;
+        border-color: transparent;
+      }
+      .nav-tab-label {
+        display: block;
+        font-size: 1.05rem;
+      }
+      .nav-tab-detail {
+        display: block;
+        margin-top: 6px;
+        font-size: 0.85rem;
+        font-weight: 500;
+        opacity: 0.86;
+      }
+      .workspace-content {
+        min-width: 0;
+        padding: 40px 32px 80px;
+      }
+      .tab-panel {
+        display: none;
+      }
+      .tab-panel[data-active="true"] {
+        display: block;
       }
       .panel {
         background: rgba(255, 255, 255, 0.86);
@@ -183,6 +257,36 @@ export function renderUploadWorkspacePage(options?: {
         overflow: auto;
         white-space: pre-wrap;
       }
+      .tab-intro {
+        margin-bottom: 20px;
+      }
+      .tab-intro h2 {
+        margin-bottom: 8px;
+      }
+      .stack {
+        display: grid;
+        gap: 24px;
+      }
+      .logs-table-wrap {
+        overflow-x: auto;
+      }
+      .logs-table td pre {
+        margin: 0;
+        min-width: 260px;
+        max-width: 420px;
+        max-height: 180px;
+      }
+      @media (max-width: 900px) {
+        .workspace-shell {
+          grid-template-columns: 1fr;
+        }
+        .workspace-nav {
+          min-height: auto;
+        }
+        .workspace-content {
+          padding: 24px 20px 64px;
+        }
+      }
     </style>
   </head>
   <body>
@@ -194,32 +298,118 @@ export function renderUploadWorkspacePage(options?: {
           Upload an Excel workbook, let the server normalize its sheets, and inspect the immutable source dataset summary that will seed the rest of the system.
         </p>
       </section>
-      <section class="grid">
-        <form class="panel" method="post" action="/imports" enctype="multipart/form-data">
-          <h2>Excel workbook</h2>
-          ${
-            options?.errorMessage
-              ? `<div class="error" role="alert">${escapeHtml(options.errorMessage)}</div>`
-              : ""
-          }
-          <input
-            id="workbookFile"
-            name="workbookFile"
-            type="file"
-            accept=".xlsx,.xls"
-            aria-label="Workbook file"
-            required
-          />
-          <p class="hint">Upload a multi-sheet Excel workbook in xlsx or xls format. The original data will be preserved as the immutable source dataset.</p>
-          <button type="submit">Import workbook</button>
-        </form>
-        <section class="panel" aria-live="polite">
-          <h2>Import result</h2>
-          <div id="import-result-root">${fragments.importResultHtml}</div>
-        </section>
+      <section class="workspace-shell">
+        <aside class="workspace-nav">
+          <div class="nav-card">
+            <h2>Workspace</h2>
+            <p>Move through the product story step by step instead of reading one giant page.</p>
+            <div class="nav-list" role="tablist" aria-label="Workspace tabs">
+              <button
+                class="nav-tab"
+                data-active="${String(activeTab === "upload")}"
+                data-tab-button="upload"
+                id="tab-button-upload"
+                role="tab"
+                aria-selected="${String(activeTab === "upload")}"
+                aria-controls="tab-panel-upload"
+              >
+                <span class="nav-tab-label">Upload Excel + Build Clean Database</span>
+                <span class="nav-tab-detail">Import the workbook, inspect the first Codex cleanup step, and watch the clean database build.</span>
+              </button>
+              <button
+                class="nav-tab"
+                data-active="${String(activeTab === "query")}"
+                data-tab-button="query"
+                id="tab-button-query"
+                role="tab"
+                aria-selected="${String(activeTab === "query")}"
+                aria-controls="tab-panel-query"
+              >
+                <span class="nav-tab-label">Ask Questions in Plain English</span>
+                <span class="nav-tab-detail">Type a question, stream the generated SQL, and review the returned table.</span>
+              </button>
+              <button
+                class="nav-tab"
+                data-active="${String(activeTab === "logs")}"
+                data-tab-button="logs"
+                id="tab-button-logs"
+                role="tab"
+                aria-selected="${String(activeTab === "logs")}"
+                aria-controls="tab-panel-logs"
+              >
+                <span class="nav-tab-label">Query History + SQL Logs</span>
+                <span class="nav-tab-detail">Inspect previous prompts, generated SQL, timing, and execution outcome in one place.</span>
+              </button>
+            </div>
+          </div>
+        </aside>
+        <div class="workspace-content">
+          <section
+            class="tab-panel"
+            data-active="${String(activeTab === "upload")}"
+            data-tab-panel="upload"
+            id="tab-panel-upload"
+            role="tabpanel"
+            aria-labelledby="tab-button-upload"
+          >
+            <section class="stack">
+              <form class="panel" method="post" action="/imports" enctype="multipart/form-data">
+                <h2>Upload Excel as DB</h2>
+                ${
+                  options?.errorMessage
+                    ? `<div class="error" role="alert">${escapeHtml(options.errorMessage)}</div>`
+                    : ""
+                }
+                <input
+                  id="workbookFile"
+                  name="workbookFile"
+                  type="file"
+                  accept=".xlsx,.xls"
+                  aria-label="Workbook file"
+                  required
+                />
+                <button type="submit">Import workbook</button>
+              </form>
+              <section class="panel">
+                <h2>Live Codex CLI output</h2>
+                <pre id="pipeline-stream-output" class="stream-output">Waiting for pipeline output...</pre>
+              </section>
+              <section class="panel" aria-live="polite">
+                <h2>Generated Pipeline</h2>
+                <div id="import-result-root">${fragments.importResultHtml}</div>
+              </section>
+            </section>
+          </section>
+          <section
+            class="tab-panel"
+            data-active="${String(activeTab === "query")}"
+            data-tab-panel="query"
+            id="tab-panel-query"
+            role="tabpanel"
+            aria-labelledby="tab-button-query"
+          >
+            <div class="tab-intro">
+              <h2>Ask questions against the clean database</h2>
+              <p>Use the cleaned schema as the querying surface, stream the generated SQL, and inspect the result rows before you decide what to ask next.</p>
+            </div>
+            <div id="query-workspace-root">${fragments.queryWorkspaceHtml}</div>
+          </section>
+          <section
+            class="tab-panel"
+            data-active="${String(activeTab === "logs")}"
+            data-tab-panel="logs"
+            id="tab-panel-logs"
+            role="tabpanel"
+            aria-labelledby="tab-button-logs"
+          >
+            <div class="tab-intro">
+              <h2>Inspect query history and generated SQL</h2>
+              <p>Use this view during demos to show what has already been asked, what SQL was generated, how long it took, and whether the query succeeded.</p>
+            </div>
+            <div id="query-logs-root">${fragments.queryLogsHtml}</div>
+          </section>
+        </div>
       </section>
-      <div id="query-workspace-root">${fragments.queryWorkspaceHtml}</div>
-      <div id="query-logs-root">${fragments.queryLogsHtml}</div>
     </main>
     ${
       sourceDatasetId
@@ -251,6 +441,19 @@ export function renderUploadWorkspacePage(options?: {
 
                 target.textContent += normalizedMessage;
                 target.scrollTop = target.scrollHeight;
+              }
+
+              function setActiveTab(tabName) {
+                document.querySelectorAll('[data-tab-button]').forEach((button) => {
+                  const isActive = button.getAttribute('data-tab-button') === tabName;
+                  button.setAttribute('data-active', String(isActive));
+                  button.setAttribute('aria-selected', String(isActive));
+                });
+
+                document.querySelectorAll('[data-tab-panel]').forEach((panel) => {
+                  const isActive = panel.getAttribute('data-tab-panel') === tabName;
+                  panel.setAttribute('data-active', String(isActive));
+                });
               }
 
               function replaceFragment(rootId, html, streamId) {
@@ -364,6 +567,16 @@ export function renderUploadWorkspacePage(options?: {
                 }
               });
 
+              document.querySelectorAll('[data-tab-button]').forEach((button) => {
+                button.addEventListener('click', () => {
+                  const tabName = button.getAttribute('data-tab-button');
+
+                  if (tabName) {
+                    setActiveTab(tabName);
+                  }
+                });
+              });
+
               document.addEventListener('submit', async (event) => {
                 const queryForm =
                   event.target instanceof HTMLFormElement &&
@@ -389,6 +602,7 @@ export function renderUploadWorkspacePage(options?: {
                   queryButton.textContent = 'Running query...';
                 }
 
+                setActiveTab('query');
                 const queryOutput = getQueryOutput();
 
                 if (queryOutput) {
@@ -430,6 +644,7 @@ export function renderWorkspaceFragments(options?: {
   importSummary?: WorkbookImportSummary;
   queryLogs?: QueryExecutionLog[];
   queryErrorMessage?: string;
+  queryLogsErrorMessage?: string;
   queryPrompt?: string;
   queryResponse?: NaturalLanguageQueryResponse;
 }): {
@@ -455,7 +670,8 @@ export function renderWorkspaceFragments(options?: {
     ),
     queryLogsHtml: renderQueryLogsHtml(
       options?.importSummary,
-      options?.queryLogs ?? []
+      options?.queryLogs ?? [],
+      options?.queryLogsErrorMessage
     ),
     queryWorkspaceHtml: renderQueryWorkspaceHtml(queryWorkspaceOptions),
   };
@@ -478,38 +694,29 @@ function renderImportResultHtml(
   }
 
   const populatedImportSummary = importSummary;
+  const pipelineVersion = populatedImportSummary.processing.pipelineVersion;
 
   return `
-    <div class="badge">${escapeHtml(model.statusBadge)}</div>
-    <h3>${escapeHtml(model.headline)}</h3>
-    <p>${escapeHtml(model.datasetLabel)}</p>
-    <p>${escapeHtml(model.totalRowsLabel)}</p>
-    <p><strong>Pipeline:</strong> ${escapeHtml(model.pipelineStatusBadge)}</p>
-    <p>${escapeHtml(model.pipelineVersionLabel)}</p>
-    <p><strong>Clean database:</strong> ${escapeHtml(model.cleanDatabaseStatusBadge)}</p>
-    <p>${escapeHtml(model.cleanDatabaseLabel)}</p>
-    ${model.nextRetryLabel ? `<p>${escapeHtml(model.nextRetryLabel)}</p>` : ""}
+    <div class="badge">${escapeHtml(model.pipelineStatusBadge)}</div>
+    <p><strong>Workbook:</strong> ${escapeHtml(populatedImportSummary.workbookName)}</p>
+    <p><strong>Pipeline status:</strong> ${escapeHtml(model.pipelineStatusBadge)}</p>
+    ${pipelineVersion ? `<p><strong>Pipeline version:</strong> ${escapeHtml(pipelineVersion.pipelineVersionId)}</p>` : "<p>Pipeline version pending.</p>"}
     ${
       model.lastPipelineError
         ? `<div class="error">${escapeHtml(model.lastPipelineError)}</div>`
         : ""
     }
-    <ul>
-      ${model.sheetBreakdown
-        .map((sheet) => `<li>${escapeHtml(sheet)}</li>`)
-        .join("")}
-    </ul>
     ${
-      populatedImportSummary.processing.pipelineVersion
+      pipelineVersion
         ? `
           <details>
-            <summary>Codex pipeline summary</summary>
-            <p>${escapeHtml(populatedImportSummary.processing.pipelineVersion.summaryMarkdown)}</p>
+            <summary>Pipeline SQL</summary>
+            <pre>${escapeHtml(pipelineVersion.sqlText)}</pre>
           </details>
-          <details>
-            <summary>Codex findings (${populatedImportSummary.processing.pipelineVersion.analysisJson.findings.length})</summary>
+          <details open>
+            <summary>Codex findings (${pipelineVersion.analysisJson.findings.length})</summary>
             <ul>
-              ${populatedImportSummary.processing.pipelineVersion.analysisJson.findings
+              ${pipelineVersion.analysisJson.findings
                 .map(
                   (finding) =>
                     `<li>${escapeHtml(`${finding.kind}: ${finding.message} -> ${finding.proposedFix} (${finding.confidence})`)}</li>`
@@ -517,21 +724,9 @@ function renderImportResultHtml(
                 .join("")}
             </ul>
           </details>
-          <details>
-            <summary>Codex prompt</summary>
-            <pre>${escapeHtml(populatedImportSummary.processing.pipelineVersion.promptMarkdown)}</pre>
-          </details>
-          <details>
-            <summary>Pipeline SQL</summary>
-            <pre>${escapeHtml(populatedImportSummary.processing.pipelineVersion.sqlText)}</pre>
-          </details>
         `
-        : ""
+        : "<p>Generated SQL and Codex findings will appear here when the cleanup pipeline is ready.</p>"
     }
-    <details class="stream-panel" open>
-      <summary>Live pipeline CLI output</summary>
-      <pre id="pipeline-stream-output" class="stream-output">Waiting for pipeline output...</pre>
-    </details>
   `;
 }
 
@@ -563,7 +758,7 @@ function renderQueryWorkspaceHtml(options: {
       : null;
 
   return `
-    <section class="grid" style="margin-top: 24px;">
+    <section class="stack" style="margin-top: 24px;">
       <form
         id="query-form"
         class="panel"
@@ -585,11 +780,11 @@ function renderQueryWorkspaceHtml(options: {
             : ""
         }
         <button type="submit">Run query</button>
-        <details class="stream-panel" open>
-          <summary>Live SQL generation</summary>
-          <pre id="query-stream-output" class="stream-output">Waiting for query output...</pre>
-        </details>
       </form>
+      <section class="panel">
+        <h2>Live SQL generation</h2>
+        <pre id="query-stream-output" class="stream-output">Waiting for query output...</pre>
+      </section>
       <section class="panel" aria-live="polite">
         <h2>Query result</h2>
         ${
@@ -631,32 +826,93 @@ function renderQueryWorkspaceHtml(options: {
 
 function renderQueryLogsHtml(
   importSummary: WorkbookImportSummary | undefined,
-  queryLogs: QueryExecutionLog[]
+  queryLogs: QueryExecutionLog[],
+  queryLogsErrorMessage?: string
 ): string {
-  const model = importSummary
-    ? buildUploadWorkspaceModel(importSummary, queryLogs)
-    : undefined;
-
-  if (!model || model.latestQueryLogs.length === 0) {
+  if (!importSummary) {
     return "";
   }
 
   return `
-    <section class="panel" style="margin-top: 24px;">
-      <h2>Recent query logs</h2>
-      <div class="log-list">
-        ${model.latestQueryLogs
-          .map(
-            (queryLog) => `
-              <div class="log-card">
-                <strong>${escapeHtml(queryLog.queryLogLabel)}</strong>
-                <p>${escapeHtml(queryLog.prompt)}</p>
-                <p>${escapeHtml(queryLog.rowCountLabel)} · ${escapeHtml(queryLog.timingLabel)}</p>
-              </div>
-            `
-          )
-          .join("")}
+    <section class="panel">
+      <h2>Recent query history</h2>
+      ${
+        importSummary.processing.cleanDatabaseStatus === "succeeded"
+          ? `
+            <form
+              method="post"
+              action="/imports/${escapeHtml(importSummary.sourceDatasetId)}/query-logs/import"
+              enctype="multipart/form-data"
+            >
+              ${
+                queryLogsErrorMessage
+                  ? `<div class="error" role="alert">${escapeHtml(queryLogsErrorMessage)}</div>`
+                  : ""
+              }
+              <label for="queryLogsWorkbookFile">Upload mock query-log workbook.</label>
+              <input
+                id="queryLogsWorkbookFile"
+                name="workbookFile"
+                type="file"
+                accept=".xlsx,.xls"
+                aria-label="Mock query log workbook"
+                required
+              />
+              <p class="hint">Use the companion demo file with the repeated SKU/day queries to seed clustering and optimization.</p>
+              <button type="submit">Upload mock query logs</button>
+            </form>
+          `
+          : '<p class="hint">Query-log imports are available after the clean database is ready.</p>'
+      }
+      ${
+        queryLogs.length === 0
+          ? "<p>No query logs have been uploaded or generated yet.</p>"
+          : ""
+      }
+      ${
+        queryLogs.length > 0
+          ? `
+      <div class="logs-table-wrap">
+        <table class="logs-table">
+          <thead>
+            <tr>
+              <th>Query Log</th>
+              <th>Prompt</th>
+              <th>Generated SQL</th>
+              <th>Status</th>
+              <th>Rows</th>
+              <th>Timing</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${queryLogs
+              .map(
+                (queryLog) => `
+                  <tr>
+                    <td>${escapeHtml(queryLog.queryLogId)}</td>
+                    <td>${escapeHtml(queryLog.prompt)}</td>
+                    <td>${
+                      queryLog.generatedSql
+                        ? `<pre>${escapeHtml(queryLog.generatedSql)}</pre>`
+                        : `<span>${escapeHtml(queryLog.errorMessage ?? "No SQL generated")}</span>`
+                    }</td>
+                    <td>${escapeHtml(queryLog.status)}</td>
+                    <td>${escapeHtml(
+                      queryLog.rowCount === null
+                        ? "No rows"
+                        : `${queryLog.rowCount} row${queryLog.rowCount === 1 ? "" : "s"}`
+                    )}</td>
+                    <td>${escapeHtml(`${queryLog.totalLatencyMs}ms total`)}</td>
+                  </tr>
+                `
+              )
+              .join("")}
+          </tbody>
+        </table>
       </div>
+      `
+          : ""
+      }
     </section>
   `;
 }

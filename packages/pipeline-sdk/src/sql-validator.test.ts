@@ -17,6 +17,22 @@ describe("validatePipelineSql", () => {
     });
   });
 
+  it("accepts indexes on derived clean-database objects", () => {
+    const result = validatePipelineSql(`
+      DROP TABLE IF EXISTS cleaned_orders;
+      CREATE TABLE cleaned_orders AS
+      SELECT trim("Order ID") AS order_id
+      FROM source.source_sheet_sheet_1;
+      CREATE INDEX IF NOT EXISTS idx_cleaned_orders_order_id
+        ON cleaned_orders(order_id);
+    `);
+
+    expect(result).toStrictEqual({
+      errors: [],
+      isValid: true,
+    });
+  });
+
   it("rejects forbidden statements and writes to source tables", () => {
     const result = validatePipelineSql(`
       UPDATE source.source_sheet_sheet_1
@@ -25,5 +41,17 @@ describe("validatePipelineSql", () => {
 
     expect(result.isValid).toBe(false);
     expect(result.errors.join(" ")).toContain("forbidden");
+  });
+
+  it("rejects indexes on source tables", () => {
+    const result = validatePipelineSql(`
+      CREATE INDEX idx_source_orders_order_id
+        ON source.source_sheet_sheet_1("Order ID");
+    `);
+
+    expect(result.isValid).toBe(false);
+    expect(result.errors.join(" ")).toContain(
+      "must not create indexes on source"
+    );
   });
 });

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import type { WorkbookImportSummary } from "../../../../packages/shared/src/index.js";
+import type {
+  QueryExecutionLog,
+  WorkbookImportSummary,
+} from "../../../../packages/shared/src/index.js";
 import { renderUploadWorkspacePage } from "./page.js";
 
 describe("renderUploadWorkspacePage", () => {
@@ -50,21 +53,68 @@ describe("renderUploadWorkspacePage", () => {
       ],
     };
 
-    const html = renderUploadWorkspacePage({ importSummary: summary });
+    const queryLogs: QueryExecutionLog[] = [
+      {
+        cleanDatabaseId: "clean_db_1",
+        errorMessage: null,
+        executionFinishedAt: "2026-03-17T15:01:05.000Z",
+        executionLatencyMs: 12,
+        executionStartedAt: "2026-03-17T15:01:04.988Z",
+        generatedSql: "SELECT order_id FROM orders LIMIT 1;",
+        generationFinishedAt: "2026-03-17T15:01:04.980Z",
+        generationLatencyMs: 1800,
+        generationStartedAt: "2026-03-17T15:01:03.180Z",
+        matchedClusterId: null,
+        optimizationEligible: null,
+        patternFingerprint: null,
+        patternSummaryJson: null,
+        patternVersion: null,
+        prompt: "fetch first row",
+        queryKind: null,
+        queryLogId: "query_log_1",
+        resultColumnNames: ["order_id"],
+        rowCount: 1,
+        sourceDatasetId: "dataset_1",
+        status: "succeeded",
+        summaryMarkdown: null,
+        totalLatencyMs: 1812,
+        usedOptimizationObjects: [],
+      },
+    ];
 
-    expect(html).toContain("sales-workbook.xlsx imported");
-    expect(html).toContain("Source dataset dataset_1");
-    expect(html).toContain("Orders: 2 rows");
-    expect(html).toContain("Pipeline version pipeline_version_1");
+    const html = renderUploadWorkspacePage({
+      importSummary: summary,
+      queryLogs,
+    });
+
+    expect(html).toContain("Upload Excel + Build Clean Database");
+    expect(html).toContain("Ask Questions in Plain English");
+    expect(html).toContain("Query History + SQL Logs");
+    expect(html).toContain("Workbook:");
+    expect(html).toContain("sales-workbook.xlsx");
+    expect(html).toContain("Upload Excel as DB");
+    expect(html).toContain("Generated Pipeline");
+    expect(html).toContain("Pipeline version:");
+    expect(html).toContain("pipeline_version_1");
     expect(html).toContain("Natural-language query");
     expect(html).toContain("Run query");
     expect(html).toContain("Live SQL generation");
+    expect(html).toContain("Live Codex CLI output");
+    expect(html).toContain("Recent query history");
+    expect(html).toContain("Upload mock query-log workbook.");
+    expect(html).toContain("Upload mock query logs");
+    expect(html).toContain("SELECT order_id FROM orders LIMIT 1;");
     expect(html).toContain('id="query-stream-output"');
-    expect(html).toContain("Codex prompt");
     expect(html).toContain("Pipeline SQL");
+    expect(html).toContain("Codex findings");
     expect(html).toContain('id="import-result-root"');
     expect(html).toContain('id="query-workspace-root"');
+    expect(html).toContain('id="query-logs-root"');
     expect(html).toContain("EventSource('/events/' + datasetId)");
+    expect(html).toContain("setActiveTab('query')");
     expect(html).not.toContain('http-equiv="refresh"');
+    expect(html).not.toContain("Start here: import the Excel workbook");
+    expect(html).not.toContain("Upload a multi-sheet Excel workbook");
+    expect(html).not.toContain("This is the live Codex CLI stream");
   });
 });

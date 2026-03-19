@@ -1,22 +1,33 @@
 import type { SqlQueryGenerator } from "../../../../packages/agent-orchestrator/src/index.js";
-import type { IngestionRepository } from "../../../../packages/database-core/src/index.js";
+import {
+  buildPatternMetadataUpdate,
+  detectUsedOptimizationObjects,
+  type IngestionRepository,
+} from "../../../../packages/database-core/src/index.js";
 import type {
+  CleanDatabaseSummary,
   CodexRunEvent,
   GeneratedSqlRecord,
   NaturalLanguageQueryRequest,
   NaturalLanguageQueryResponse,
   QueryExecutionLog,
+  WorkbookUploadRequest,
 } from "../../../../packages/shared/src/index.js";
 import type {
   QueryExecutor,
   QuerySqlValidationResult,
 } from "../../../../packages/pipeline-sdk/src/index.js";
+import { importQueryLogsFromWorkbook } from "./mock-log-import.js";
 
 export interface QuerySqlValidator {
   validate(sqlText: string): QuerySqlValidationResult;
 }
 
 export interface QueryApi {
+  importQueryLogs(options: {
+    sourceDatasetId: string;
+    workbook: WorkbookUploadRequest;
+  }): { importedCount: number };
   listQueryExecutionLogs(
     sourceDatasetId: string,
     limit?: number
@@ -30,6 +41,7 @@ export interface CreateQueryApiOptions {
   createId?: (prefix: string) => string;
   now?: () => Date;
   onRunEvent?: (runEvent: CodexRunEvent) => void;
+  queryLearningLoop?: { schedule: (sourceDatasetId: string) => void };
   queryExecutor: QueryExecutor;
   queryGenerator: SqlQueryGenerator;
   repository: IngestionRepository;
@@ -68,36 +80,57 @@ export function createQueryApi(options: CreateQueryApiOptions): QueryApi {
   const now = options.now ?? (() => new Date());
 
   return {
+    importQueryLogs(request) {
+      const readyDataset = getReadyDatasetState(
+        options.repository,
+        request.sourceDatasetId
+      );
+      const importedQueryLogs = importQueryLogsFromWorkbook({
+        cleanDatabaseId: readyDataset.cleanDatabase.cleanDatabaseId,
+        createId,
+        sourceDatasetId: request.sourceDatasetId,
+        workbook: request.workbook,
+      }).map((queryLog) => {
+        const patternMetadata = buildPatternMetadataUpdate({ queryLog });
+
+        return patternMetadata === null
+          ? queryLog
+          : {
+              ...queryLog,
+              matchedClusterId: patternMetadata.matchedClusterId,
+              optimizationEligible: patternMetadata.optimizationEligible,
+              patternFingerprint: patternMetadata.patternFingerprint,
+              patternSummaryJson: patternMetadata.patternSummaryJson,
+              patternVersion: patternMetadata.patternVersion,
+              queryKind: patternMetadata.queryKind,
+              usedOptimizationObjects:
+                patternMetadata.usedOptimizationObjects ??
+                queryLog.usedOptimizationObjects,
+            };
+      });
+
+      importedQueryLogs.forEach((queryLog) => {
+        options.repository.saveQueryExecutionLog(queryLog);
+      });
+      options.queryLearningLoop?.schedule(request.sourceDatasetId);
+
+      return {
+        importedCount: importedQueryLogs.length,
+      };
+    },
     listQueryExecutionLogs(sourceDatasetId, limit) {
       return options.repository.listQueryExecutionLogs(sourceDatasetId, limit);
     },
     async runNaturalLanguageQuery(request) {
-      const dataset = options.repository.getById(request.sourceDatasetId);
-
-      if (!dataset) {
-        throw new QueryApiError({
-          message: "Source dataset not found.",
-          statusCode: 404,
-        });
-      }
-
-      const processingState = options.repository.getImportProcessingState(
+      const { cleanDatabase } = getReadyDatasetState(
+        options.repository,
         request.sourceDatasetId
       );
-      const cleanDatabase = processingState?.cleanDatabase;
-
-      if (
-        !processingState ||
-        processingState.cleanDatabaseStatus !== "succeeded" ||
-        !cleanDatabase
-      ) {
-        throw new QueryApiError({
-          message: "Clean database is not ready for querying yet.",
-          statusCode: 409,
-        });
-      }
 
       const generationStartedAt = now();
+      const optimizationHints = options.repository.listActiveOptimizationHints(
+        request.sourceDatasetId
+      );
       let generatedSqlRecord: GeneratedSqlRecord | null = null;
       publishRunEvent({
         createId,
@@ -112,6 +145,7 @@ export function createQueryApi(options: CreateQueryApiOptions): QueryApi {
         const generated = await options.queryGenerator.generateSql({
           cleanDatabaseId: cleanDatabase.cleanDatabaseId,
           cleanDatabasePath: cleanDatabase.databaseFilePath,
+          optimizationHints,
           onDelta: (chunk) => {
             publishRunEvent({
               createId,
@@ -167,6 +201,10 @@ export function createQueryApi(options: CreateQueryApiOptions): QueryApi {
           sqlText: generated.sqlText,
         });
         const executionFinishedAt = now();
+        const usedOptimizationObjects = detectUsedOptimizationObjects({
+          optimizationHints,
+          sqlText: generated.sqlText,
+        });
         const queryLog = createQueryExecutionLog({
           cleanDatabaseId: cleanDatabase.cleanDatabaseId,
           executionFinishedAt,
@@ -177,22 +215,40 @@ export function createQueryApi(options: CreateQueryApiOptions): QueryApi {
           result,
           sourceDatasetId: request.sourceDatasetId,
           status: "succeeded",
+          usedOptimizationObjects,
         });
+        const patternMetadata = buildPatternMetadataUpdate({
+          queryLog,
+          usedOptimizationObjects,
+        });
+        const enrichedQueryLog =
+          patternMetadata === null
+            ? queryLog
+            : {
+                ...queryLog,
+                matchedClusterId: patternMetadata.matchedClusterId,
+                optimizationEligible: patternMetadata.optimizationEligible,
+                patternFingerprint: patternMetadata.patternFingerprint,
+                patternSummaryJson: patternMetadata.patternSummaryJson,
+                patternVersion: patternMetadata.patternVersion,
+                queryKind: patternMetadata.queryKind,
+              };
 
-        options.repository.saveQueryExecutionLog(queryLog);
+        options.repository.saveQueryExecutionLog(enrichedQueryLog);
+        options.queryLearningLoop?.schedule(request.sourceDatasetId);
         publishRunEvent({
           createId,
-          message: `Query succeeded with ${queryLog.rowCount ?? 0} row${queryLog.rowCount === 1 ? "" : "s"}.`,
+          message: `Query succeeded with ${enrichedQueryLog.rowCount ?? 0} row${enrichedQueryLog.rowCount === 1 ? "" : "s"}.`,
           now,
           options,
-          queryLogId: queryLog.queryLogId,
+          queryLogId: enrichedQueryLog.queryLogId,
           sourceDatasetId: request.sourceDatasetId,
           stream: "system",
         });
 
         return {
           generatedSqlRecord,
-          queryLog,
+          queryLog: enrichedQueryLog,
           result,
         };
       } catch (error) {
@@ -238,6 +294,40 @@ export function createQueryApi(options: CreateQueryApiOptions): QueryApi {
   };
 }
 
+function getReadyDatasetState(
+  repository: IngestionRepository,
+  sourceDatasetId: string
+): {
+  cleanDatabase: CleanDatabaseSummary;
+} {
+  const dataset = repository.getById(sourceDatasetId);
+
+  if (!dataset) {
+    throw new QueryApiError({
+      message: "Source dataset not found.",
+      statusCode: 404,
+    });
+  }
+
+  const processingState = repository.getImportProcessingState(sourceDatasetId);
+  const cleanDatabase = processingState?.cleanDatabase;
+
+  if (
+    !processingState ||
+    processingState.cleanDatabaseStatus !== "succeeded" ||
+    !cleanDatabase
+  ) {
+    throw new QueryApiError({
+      message: "Clean database is not ready for querying yet.",
+      statusCode: 409,
+    });
+  }
+
+  return {
+    cleanDatabase,
+  };
+}
+
 function publishRunEvent(options: {
   createId: (prefix: string) => string;
   message: string;
@@ -280,6 +370,7 @@ function createQueryExecutionLog(options: {
   status: QueryExecutionLog["status"];
   totalFinishedAt?: Date;
   totalStartedAt?: Date;
+  usedOptimizationObjects?: string[];
 }): QueryExecutionLog {
   const totalStartedAt =
     options.totalStartedAt ??
@@ -307,7 +398,13 @@ function createQueryExecutionLog(options: {
     generationStartedAt:
       options.generatedSqlRecord?.generationStartedAt ??
       totalStartedAt.toISOString(),
+    matchedClusterId: null,
+    optimizationEligible: null,
+    patternFingerprint: null,
+    patternSummaryJson: null,
+    patternVersion: null,
     prompt: options.prompt,
+    queryKind: null,
     queryLogId: options.queryLogId,
     resultColumnNames: options.result?.columnNames ?? [],
     rowCount: options.result?.rows.length ?? null,
@@ -315,5 +412,6 @@ function createQueryExecutionLog(options: {
     status: options.status,
     summaryMarkdown: options.generatedSqlRecord?.summaryMarkdown ?? null,
     totalLatencyMs: totalFinishedAt.getTime() - totalStartedAt.getTime(),
+    usedOptimizationObjects: options.usedOptimizationObjects ?? [],
   };
 }
