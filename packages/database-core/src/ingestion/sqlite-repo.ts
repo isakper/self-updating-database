@@ -1,4 +1,14 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname } from "node:path";
 
 import initSqlJs, {
@@ -36,11 +46,13 @@ export async function openSourceDatabase(
   options: OpenSourceDatabaseOptions
 ): Promise<SourceDatabaseConnection> {
   mkdirSync(dirname(options.databaseFilePath), { recursive: true });
+  recoverSourceDatabaseFile(options.databaseFilePath);
 
   const SQL = await initSqlJs();
-  const database = existsSync(options.databaseFilePath)
-    ? new SQL.Database(readFileSync(options.databaseFilePath))
-    : new SQL.Database();
+  const database = openDatabaseWithRecovery({
+    SQL,
+    databaseFilePath: options.databaseFilePath,
+  });
 
   initializeSourceDatabase(database);
 
@@ -51,9 +63,121 @@ export async function openSourceDatabase(
       database.close();
     },
     persist() {
-      writeFileSync(options.databaseFilePath, Buffer.from(database.export()));
+      persistSourceDatabaseAtomically({
+        database,
+        databaseFilePath: options.databaseFilePath,
+      });
     },
   };
+}
+
+function openDatabaseWithRecovery(options: {
+  SQL: Awaited<ReturnType<typeof initSqlJs>>;
+  databaseFilePath: string;
+}): Database {
+  if (!existsSync(options.databaseFilePath)) {
+    return new options.SQL.Database();
+  }
+
+  try {
+    const database = new options.SQL.Database(
+      readFileSync(options.databaseFilePath)
+    );
+
+    if (isReadableSqliteDatabase(database)) {
+      return database;
+    }
+
+    database.close();
+    throw new Error("Primary source DB file is unreadable.");
+  } catch (error) {
+    const backupPath = getSourceDatabaseBackupPath(options.databaseFilePath);
+
+    if (!existsSync(backupPath)) {
+      throw error;
+    }
+
+    const backupBytes = readFileSync(backupPath);
+    writeFileSync(options.databaseFilePath, backupBytes);
+    return new options.SQL.Database(backupBytes);
+  }
+}
+
+function isReadableSqliteDatabase(database: Database): boolean {
+  try {
+    database.exec("PRAGMA schema_version;");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function recoverSourceDatabaseFile(databaseFilePath: string): void {
+  const tempPath = getSourceDatabaseTempPath(databaseFilePath);
+  const backupPath = getSourceDatabaseBackupPath(databaseFilePath);
+
+  if (existsSync(tempPath)) {
+    rmSync(tempPath, { force: true });
+  }
+
+  if (!existsSync(databaseFilePath) && existsSync(backupPath)) {
+    renameSync(backupPath, databaseFilePath);
+    return;
+  }
+}
+
+function persistSourceDatabaseAtomically(options: {
+  database: Database;
+  databaseFilePath: string;
+}): void {
+  const bytes = Buffer.from(options.database.export());
+  const databaseDirectoryPath = dirname(options.databaseFilePath);
+  const tempPath = getSourceDatabaseTempPath(options.databaseFilePath);
+  const backupPath = getSourceDatabaseBackupPath(options.databaseFilePath);
+
+  writeFileSync(tempPath, bytes);
+  fsyncFile(tempPath);
+
+  if (existsSync(backupPath)) {
+    rmSync(backupPath, { force: true });
+  }
+
+  if (existsSync(options.databaseFilePath)) {
+    renameSync(options.databaseFilePath, backupPath);
+  }
+
+  renameSync(tempPath, options.databaseFilePath);
+  fsyncDirectory(databaseDirectoryPath);
+
+  if (existsSync(backupPath)) {
+    rmSync(backupPath, { force: true });
+  }
+}
+
+function getSourceDatabaseBackupPath(databaseFilePath: string): string {
+  return `${databaseFilePath}.bak`;
+}
+
+function getSourceDatabaseTempPath(databaseFilePath: string): string {
+  return `${databaseFilePath}.tmp`;
+}
+
+function fsyncFile(filePath: string): void {
+  const fileDescriptor = openSync(filePath, "r");
+  try {
+    fsyncSync(fileDescriptor);
+  } finally {
+    closeSync(fileDescriptor);
+  }
+}
+
+function fsyncDirectory(directoryPath: string): void {
+  const directoryDescriptor = openSync(directoryPath, "r");
+  try {
+    fsyncSync(directoryDescriptor);
+  } finally {
+    closeSync(directoryDescriptor);
+  }
 }
 
 export class SqliteSourceDatasetRepository implements IngestionRepository {
@@ -476,7 +600,9 @@ export class SqliteSourceDatasetRepository implements IngestionRepository {
           stream,
           message,
           created_at,
-          query_log_id
+          query_log_id,
+          reason_code,
+          elapsed_ms
         )
         VALUES (
           $eventId,
@@ -485,14 +611,18 @@ export class SqliteSourceDatasetRepository implements IngestionRepository {
           $stream,
           $message,
           $createdAt,
-          $queryLogId
+          $queryLogId,
+          $reasonCode,
+          $elapsedMs
         )
       `,
       {
         $createdAt: runEvent.createdAt,
+        $elapsedMs: runEvent.elapsedMs ?? null,
         $eventId: runEvent.eventId,
         $message: runEvent.message,
         $queryLogId: runEvent.queryLogId,
+        $reasonCode: runEvent.reasonCode ?? null,
         $scope: runEvent.scope,
         $sourceDatasetId: runEvent.sourceDatasetId,
         $stream: runEvent.stream,
@@ -512,7 +642,9 @@ export class SqliteSourceDatasetRepository implements IngestionRepository {
           stream,
           message,
           created_at,
-          query_log_id
+          query_log_id,
+          reason_code,
+          elapsed_ms
         FROM codex_run_events
         WHERE source_dataset_id = $sourceDatasetId
         ORDER BY created_at ASC, event_id ASC
@@ -546,6 +678,7 @@ export class SqliteSourceDatasetRepository implements IngestionRepository {
           total_latency_ms,
           row_count,
           result_column_names_json,
+          result_rows_sample_json,
           pattern_fingerprint,
           pattern_version,
           query_kind,
@@ -572,6 +705,7 @@ export class SqliteSourceDatasetRepository implements IngestionRepository {
           $totalLatencyMs,
           $rowCount,
           $resultColumnNamesJson,
+          $resultRowsSampleJson,
           $patternFingerprint,
           $patternVersion,
           $queryKind,
@@ -607,6 +741,11 @@ export class SqliteSourceDatasetRepository implements IngestionRepository {
         $prompt: queryLog.prompt,
         $queryLogId: queryLog.queryLogId,
         $resultColumnNamesJson: JSON.stringify(queryLog.resultColumnNames),
+        $resultRowsSampleJson:
+          queryLog.resultRowsSample === undefined ||
+          queryLog.resultRowsSample === null
+            ? null
+            : JSON.stringify(queryLog.resultRowsSample),
         $rowCount: queryLog.rowCount,
         $sourceDatasetId: queryLog.sourceDatasetId,
         $status: queryLog.status,
@@ -645,6 +784,7 @@ export class SqliteSourceDatasetRepository implements IngestionRepository {
           total_latency_ms,
           row_count,
           result_column_names_json,
+          result_rows_sample_json,
           pattern_fingerprint,
           pattern_version,
           query_kind,
@@ -829,6 +969,7 @@ export class SqliteSourceDatasetRepository implements IngestionRepository {
           decision,
           status,
           error_message,
+          failure_reason_code,
           created_at,
           updated_at
         )
@@ -847,6 +988,7 @@ export class SqliteSourceDatasetRepository implements IngestionRepository {
           $decision,
           $status,
           $errorMessage,
+          $failureReasonCode,
           $createdAt,
           $updatedAt
         )
@@ -861,6 +1003,7 @@ export class SqliteSourceDatasetRepository implements IngestionRepository {
           decision = excluded.decision,
           status = excluded.status,
           error_message = excluded.error_message,
+          failure_reason_code = excluded.failure_reason_code,
           updated_at = excluded.updated_at
       `,
       {
@@ -873,6 +1016,7 @@ export class SqliteSourceDatasetRepository implements IngestionRepository {
         $createdAt: revision.createdAt,
         $decision: revision.decision,
         $errorMessage: revision.errorMessage,
+        $failureReasonCode: revision.failureReasonCode,
         $optimizationHintsJson: JSON.stringify(revision.optimizationHints),
         $optimizationRevisionId: revision.optimizationRevisionId,
         $promptMarkdown: revision.promptMarkdown,
@@ -907,6 +1051,7 @@ export class SqliteSourceDatasetRepository implements IngestionRepository {
           decision,
           status,
           error_message,
+          failure_reason_code,
           created_at,
           updated_at
         FROM optimization_revisions
@@ -1028,6 +1173,7 @@ function initializeSourceDatabase(database: Database): void {
       total_latency_ms INTEGER NOT NULL,
       row_count INTEGER,
       result_column_names_json TEXT NOT NULL,
+      result_rows_sample_json TEXT,
       pattern_fingerprint TEXT,
       pattern_version INTEGER,
       query_kind TEXT,
@@ -1072,6 +1218,7 @@ function initializeSourceDatabase(database: Database): void {
       decision TEXT NOT NULL,
       status TEXT NOT NULL,
       error_message TEXT,
+      failure_reason_code TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY (source_dataset_id) REFERENCES source_datasets(id)
@@ -1085,6 +1232,8 @@ function initializeSourceDatabase(database: Database): void {
       message TEXT NOT NULL,
       created_at TEXT NOT NULL,
       query_log_id TEXT,
+      reason_code TEXT,
+      elapsed_ms INTEGER,
       FOREIGN KEY (source_dataset_id) REFERENCES source_datasets(id)
     );
 
@@ -1156,6 +1305,20 @@ function initializeSourceDatabase(database: Database): void {
     "used_optimization_objects_json",
     "TEXT NOT NULL DEFAULT '[]'"
   );
+  ensureColumnExists(
+    database,
+    "query_execution_logs",
+    "result_rows_sample_json",
+    "TEXT"
+  );
+  ensureColumnExists(
+    database,
+    "optimization_revisions",
+    "failure_reason_code",
+    "TEXT"
+  );
+  ensureColumnExists(database, "codex_run_events", "reason_code", "TEXT");
+  ensureColumnExists(database, "codex_run_events", "elapsed_ms", "INTEGER");
 }
 
 function createSourceSheetTable(database: Database, sheet: SourceSheet): void {
@@ -1280,6 +1443,11 @@ function parseCleanDatabaseSummary(
 function parseQueryExecutionLog(
   row: Record<string, SqlValue>
 ): QueryExecutionLog {
+  const resultRowsSample = readNullableJsonValue(
+    row,
+    "result_rows_sample_json"
+  ) as Exclude<QueryExecutionLog["resultRowsSample"], undefined>;
+
   return {
     cleanDatabaseId: readString(row, "clean_database_id"),
     errorMessage: readNullableString(row, "error_message"),
@@ -1305,6 +1473,7 @@ function parseQueryExecutionLog(
     ) as QueryExecutionLog["queryKind"],
     queryLogId: readString(row, "query_log_id"),
     resultColumnNames: readStringArray(row, "result_column_names_json"),
+    ...(resultRowsSample !== null ? { resultRowsSample } : {}),
     rowCount: readNullableNumber(row, "row_count"),
     sourceDatasetId: readString(row, "source_dataset_id"),
     status: readString(row, "status") as QueryExecutionLog["status"],
@@ -1318,6 +1487,9 @@ function parseQueryExecutionLog(
 }
 
 function parseCodexRunEvent(row: Record<string, SqlValue>): CodexRunEvent {
+  const elapsedMs = readNullableNumber(row, "elapsed_ms");
+  const reasonCode = readNullableString(row, "reason_code");
+
   return {
     createdAt: readString(row, "created_at"),
     eventId: readString(row, "event_id"),
@@ -1326,6 +1498,15 @@ function parseCodexRunEvent(row: Record<string, SqlValue>): CodexRunEvent {
     scope: readString(row, "scope") as CodexRunEvent["scope"],
     sourceDatasetId: readString(row, "source_dataset_id"),
     stream: readString(row, "stream") as CodexRunEvent["stream"],
+    ...(elapsedMs !== null ? { elapsedMs } : {}),
+    ...(reasonCode !== null
+      ? {
+          reasonCode: reasonCode as Exclude<
+            CodexRunEvent["reasonCode"],
+            undefined
+          >,
+        }
+      : {}),
   };
 }
 
@@ -1388,6 +1569,10 @@ function parseOptimizationRevision(
     createdAt: readString(row, "created_at"),
     decision: readString(row, "decision") as OptimizationRevision["decision"],
     errorMessage: readNullableString(row, "error_message"),
+    failureReasonCode: readNullableString(
+      row,
+      "failure_reason_code"
+    ) as OptimizationRevision["failureReasonCode"],
     optimizationHints: readJsonValue(
       row,
       "optimization_hints_json"

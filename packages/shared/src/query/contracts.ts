@@ -60,6 +60,15 @@ export type OptimizationRevisionStatus =
   | "running"
   | "succeeded"
   | "failed";
+export type OptimizationFailureReasonCode =
+  | "artifact_contract"
+  | "missing_artifacts"
+  | "process_exit"
+  | "retry_exhausted"
+  | "runtime_error"
+  | "sql_validation"
+  | "startup_failure"
+  | "timeout";
 
 export interface OptimizationRevision {
   analysisJson: Record<string, unknown>;
@@ -70,6 +79,7 @@ export interface OptimizationRevision {
   candidateSet: OptimizationCandidateSet;
   createdAt: string;
   errorMessage: string | null;
+  failureReasonCode: OptimizationFailureReasonCode | null;
   optimizationHints: OptimizationHint[];
   optimizationRevisionId: string;
   promptMarkdown: string;
@@ -113,6 +123,7 @@ export interface QueryExecutionLog {
   patternVersion: number | null;
   queryKind: SqlQueryKind | null;
   resultColumnNames: string[];
+  resultRowsSample?: QueryResultCellValue[][] | null;
   rowCount: number | null;
   sourceDatasetId: string;
   status: QueryExecutionStatus;

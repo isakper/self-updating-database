@@ -24,6 +24,37 @@ export function handleOptimizationRequest(options: {
     return true;
   }
 
+  if (
+    options.request.method === "POST" &&
+    requestUrl.pathname.startsWith("/api/optimization-runs/")
+  ) {
+    const datasetId = requestUrl.pathname.split("/").at(-1);
+
+    if (!datasetId) {
+      writeJson(options.response, 400, { error: "Dataset id is required." });
+      return true;
+    }
+
+    writeJson(options.response, 202, options.api.triggerRun(datasetId));
+    return true;
+  }
+
+  if (
+    options.request.method === "POST" &&
+    requestUrl.pathname.startsWith("/api/optimization-retries/")
+  ) {
+    const datasetId = requestUrl.pathname.split("/").at(-1);
+
+    if (!datasetId) {
+      writeJson(options.response, 400, { error: "Dataset id is required." });
+      return true;
+    }
+
+    const result = options.api.retryLatestFailedRevision(datasetId);
+    writeJson(options.response, result.accepted ? 202 : 409, result);
+    return true;
+  }
+
   return false;
 }
 
@@ -32,6 +63,8 @@ function writeJson(
   statusCode: number,
   payload: {
     error?: string;
+    accepted?: boolean;
+    message?: string;
     optimizationRevisions?: unknown;
     queryClusters?: unknown;
   }

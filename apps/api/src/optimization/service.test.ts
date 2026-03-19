@@ -433,6 +433,65 @@ describe("createQueryLearningLoop", () => {
       [...activeHints.map((hint) => hint.preferredObjects[0])].sort()
     ).toStrictEqual(["sku_day_zero_fill", "transactions_daily_sku"]);
   });
+
+  it("allows retrying the latest failed candidate set", async () => {
+    const repository = createRepository();
+    seedQueryLogs(repository);
+    let attempt = 0;
+    const loop = createQueryLearningLoop({
+      cleanDatabaseBuilder: {
+        buildCleanDatabase: () =>
+          Promise.reject(new Error("build should not run for no-change")),
+      },
+      cleanDatabaseDirectoryPath: ".data/test-clean-databases",
+      codexOptimizationGenerator: {
+        generateOptimizationArtifacts(options) {
+          attempt += 1;
+
+          if (attempt === 1) {
+            return Promise.reject(
+              new Error("First optimization attempt failed")
+            );
+          }
+
+          return Promise.resolve({
+            analysisJson: {
+              findings: [],
+              sourceDatasetId: options.sourceDatasetId,
+              summary: "Retry succeeded with no change.",
+            },
+            decision: "no_change",
+            optimizationHints: [],
+            prompt: "prompt",
+            sqlText: CURRENT_PIPELINE.sqlText,
+            summaryMarkdown: "No change.",
+            workspacePath: "/tmp/fake",
+          });
+        },
+      },
+      optimizationRetryBackoffMs: 60_000,
+      repository,
+      sourceDatabasePath: ".data/source.sqlite",
+      sqlValidator: {
+        validate: validatePipelineSql,
+      },
+    });
+
+    loop.schedule("dataset_1");
+    await loop.drain();
+
+    const failedRevision = repository.listOptimizationRevisions("dataset_1")[0];
+    expect(failedRevision?.status).toBe("failed");
+
+    const retryResult = loop.retryLatestFailedRevision("dataset_1");
+    expect(retryResult.accepted).toBe(true);
+
+    await loop.drain();
+
+    const revisions = repository.listOptimizationRevisions("dataset_1");
+    expect(revisions[0]?.status).toBe("succeeded");
+    expect(revisions[1]?.status).toBe("failed");
+  });
 });
 
 const CURRENT_PIPELINE: PipelineVersionRecord = {

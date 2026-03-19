@@ -82,6 +82,23 @@ export async function handleIngestionRequest(options: {
     return true;
   }
 
+  if (
+    request.method === "POST" &&
+    requestUrl.pathname.startsWith("/api/imports/") &&
+    requestUrl.pathname.endsWith("/pipeline-rerun")
+  ) {
+    const datasetId = requestUrl.pathname.split("/").at(-2);
+
+    if (!datasetId) {
+      writeJson(response, 400, { error: "Dataset id is required." });
+      return true;
+    }
+
+    const result = api.rerunPipeline(datasetId);
+    writeJson(response, result.accepted ? 202 : 409, result);
+    return true;
+  }
+
   return false;
 }
 

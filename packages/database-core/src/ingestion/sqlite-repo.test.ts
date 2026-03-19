@@ -1,4 +1,10 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import {
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -109,6 +115,7 @@ describe("SqliteSourceDatasetRepository", () => {
       queryKind: null,
       queryLogId: "query_log_1",
       resultColumnNames: ["order_id"],
+      resultRowsSample: [["A-1"]],
       rowCount: 1,
       sourceDatasetId: "dataset_1",
       status: "succeeded",
@@ -241,6 +248,7 @@ describe("SqliteSourceDatasetRepository", () => {
       createdAt: "2026-03-18T00:06:00.000Z",
       decision: "pipeline_revision",
       errorMessage: null,
+      failureReasonCode: null,
       optimizationHints: [
         {
           guidance: "Prefer agg_orders_by_region.",
@@ -277,5 +285,65 @@ describe("SqliteSourceDatasetRepository", () => {
     ).toStrictEqual(revision.optimizationHints);
 
     secondDatabase.close();
+  });
+
+  it("recovers from a backup file when the primary source DB is missing", async () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "source-db-recovery-"));
+    tempDirectories.push(tempDirectory);
+
+    const databaseFilePath = join(tempDirectory, "source-datasets.sqlite");
+    const firstDatabase = await openSourceDatabase({ databaseFilePath });
+    const firstRepository = new SqliteSourceDatasetRepository({
+      connection: firstDatabase,
+    });
+    const dataset: SourceDataset = {
+      id: "dataset_recovery",
+      workbookName: "recovery.xlsx",
+      importedAt: "2026-03-18T00:00:00.000Z",
+      sheets: [],
+    };
+
+    firstRepository.save(dataset);
+    firstDatabase.close();
+
+    renameSync(databaseFilePath, `${databaseFilePath}.bak`);
+    const recoveredDatabase = await openSourceDatabase({ databaseFilePath });
+    const recoveredRepository = new SqliteSourceDatasetRepository({
+      connection: recoveredDatabase,
+    });
+
+    expect(recoveredRepository.getById(dataset.id)).toStrictEqual(dataset);
+    recoveredDatabase.close();
+  });
+
+  it("restores from backup when the primary source DB file is corrupt", async () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "source-db-corrupt-"));
+    tempDirectories.push(tempDirectory);
+
+    const databaseFilePath = join(tempDirectory, "source-datasets.sqlite");
+    const firstDatabase = await openSourceDatabase({ databaseFilePath });
+    const firstRepository = new SqliteSourceDatasetRepository({
+      connection: firstDatabase,
+    });
+    const dataset: SourceDataset = {
+      id: "dataset_corrupt",
+      workbookName: "corrupt.xlsx",
+      importedAt: "2026-03-18T00:00:00.000Z",
+      sheets: [],
+    };
+
+    firstRepository.save(dataset);
+    firstDatabase.close();
+
+    writeFileSync(`${databaseFilePath}.bak`, readFileSync(databaseFilePath));
+    writeFileSync(databaseFilePath, "not-a-sqlite-db", "utf8");
+
+    const recoveredDatabase = await openSourceDatabase({ databaseFilePath });
+    const recoveredRepository = new SqliteSourceDatasetRepository({
+      connection: recoveredDatabase,
+    });
+
+    expect(recoveredRepository.getById(dataset.id)).toStrictEqual(dataset);
+    recoveredDatabase.close();
   });
 });

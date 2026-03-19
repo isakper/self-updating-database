@@ -9,6 +9,7 @@ import type {
   SourceSheetSummary,
 } from "../../shared/src/index.js";
 import {
+  type RequiredArtifact,
   readRequiredArtifact,
   runCodexCommand,
 } from "./codex-command-runner.js";
@@ -43,6 +44,7 @@ export interface CodexCliPipelineGeneratorOptions {
   model?: string;
   playwrightMcpStartupTimeoutSec?: number;
   processExitGracePeriodMs?: number;
+  retainWorkspaceOnSuccess?: boolean;
 }
 
 export interface SourceDatasetProfile {
@@ -84,6 +86,7 @@ export function createCodexCliPipelineGenerator(
   const playwrightMcpStartupTimeoutSec =
     options.playwrightMcpStartupTimeoutSec ?? 10;
   const processExitGracePeriodMs = options.processExitGracePeriodMs ?? 1_000;
+  const retainWorkspaceOnSuccess = options.retainWorkspaceOnSuccess ?? false;
 
   return {
     async generatePipelineArtifacts(input) {
@@ -113,6 +116,29 @@ export function createCodexCliPipelineGenerator(
       );
 
       try {
+        const requiredArtifacts: RequiredArtifact[] = [
+          {
+            filePath: join(workspacePath, "pipeline.sql"),
+          },
+          {
+            filePath: join(workspacePath, "analysis.json"),
+            validateContents(contents) {
+              const analysis = parseAnalysisArtifact(contents);
+              if (analysis.sourceDatasetId !== input.sourceDatasetId) {
+                throw new Error(
+                  `analysis.json sourceDatasetId mismatch: expected ${input.sourceDatasetId}, received ${analysis.sourceDatasetId}.`
+                );
+              }
+            },
+          },
+          {
+            filePath: join(workspacePath, "summary.md"),
+            validateContents(contents) {
+              validateMarkdownArtifact(contents, "summary.md");
+            },
+          },
+        ];
+
         await runCodexCommand(
           codexCommand,
           [
@@ -131,11 +157,7 @@ export function createCodexCliPipelineGenerator(
           ],
           prompt,
           workspacePath,
-          [
-            join(workspacePath, "pipeline.sql"),
-            join(workspacePath, "analysis.json"),
-            join(workspacePath, "summary.md"),
-          ],
+          requiredArtifacts,
           {
             artifactPollIntervalMs,
             commandTimeoutMs,
@@ -169,14 +191,19 @@ export function createCodexCliPipelineGenerator(
           join(workspacePath, "analysis.json")
         );
         const analysisJson = parseAnalysisArtifact(analysisJsonText);
-
-        return {
+        const result: GeneratedPipelineArtifacts = {
           analysisJson,
           prompt,
           sqlText,
           summaryMarkdown,
           workspacePath,
         };
+
+        if (!retainWorkspaceOnSuccess) {
+          await rm(workspacePath, { force: true, recursive: true });
+        }
+
+        return result;
       } catch (error) {
         await rm(workspacePath, { force: true, recursive: true });
         throw error;
@@ -296,7 +323,7 @@ Important:
 - ensure source data remains immutable`;
 }
 
-function parseAnalysisArtifact(rawJson: string): CodexAnalysisArtifact {
+export function parseAnalysisArtifact(rawJson: string): CodexAnalysisArtifact {
   const candidate = JSON.parse(rawJson) as unknown;
 
   if (!candidate || typeof candidate !== "object") {
@@ -344,4 +371,13 @@ function parseAnalysisArtifact(rawJson: string): CodexAnalysisArtifact {
     sourceDatasetId: analysis.sourceDatasetId,
     summary: analysis.summary,
   };
+}
+
+function validateMarkdownArtifact(
+  contents: string,
+  artifactLabel: string
+): void {
+  if (contents.trim().length === 0) {
+    throw new Error(`${artifactLabel} must be non-empty markdown text.`);
+  }
 }

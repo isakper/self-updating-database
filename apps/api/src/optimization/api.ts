@@ -3,6 +3,7 @@ import type {
   OptimizationRevision,
   QueryCluster,
 } from "../../../../packages/shared/src/index.js";
+import type { QueryLearningLoop } from "./service.js";
 
 export interface OptimizationInsightsResponse {
   queryClusters: QueryCluster[];
@@ -11,9 +12,17 @@ export interface OptimizationInsightsResponse {
 
 export interface OptimizationApi {
   getInsights(sourceDatasetId: string): OptimizationInsightsResponse;
+  retryLatestFailedRevision(sourceDatasetId: string): OptimizationRunResponse;
+  triggerRun(sourceDatasetId: string): OptimizationRunResponse;
+}
+
+export interface OptimizationRunResponse {
+  accepted: boolean;
+  message: string;
 }
 
 export function createOptimizationApi(options: {
+  queryLearningLoop: QueryLearningLoop;
   repository: IngestionRepository;
 }): OptimizationApi {
   return {
@@ -28,6 +37,14 @@ export function createOptimizationApi(options: {
           20
         ),
       };
+    },
+    retryLatestFailedRevision(sourceDatasetId) {
+      return options.queryLearningLoop.retryLatestFailedRevision(
+        sourceDatasetId
+      );
+    },
+    triggerRun(sourceDatasetId) {
+      return options.queryLearningLoop.triggerRun(sourceDatasetId);
     },
   };
 }

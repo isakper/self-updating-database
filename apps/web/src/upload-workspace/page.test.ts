@@ -90,6 +90,7 @@ describe("renderUploadWorkspacePage", () => {
     expect(html).toContain("Upload Excel + Build Clean Database");
     expect(html).toContain("Ask Questions in Plain English");
     expect(html).toContain("Query History + SQL Logs");
+    expect(html).toContain("DB Walkthrough + Flow Diagram");
     expect(html).toContain("Workbook:");
     expect(html).toContain("sales-workbook.xlsx");
     expect(html).toContain("Upload Excel as DB");
@@ -103,6 +104,9 @@ describe("renderUploadWorkspacePage", () => {
     expect(html).toContain("Recent query history");
     expect(html).toContain("Upload mock query-log workbook.");
     expect(html).toContain("Upload mock query logs");
+    expect(html).toContain("Rerun pipeline");
+    expect(html).toContain("Run optimization now");
+    expect(html).toContain("Retry latest failed optimization");
     expect(html).toContain("SELECT order_id FROM orders LIMIT 1;");
     expect(html).toContain('id="query-stream-output"');
     expect(html).toContain("Pipeline SQL");
@@ -110,6 +114,7 @@ describe("renderUploadWorkspacePage", () => {
     expect(html).toContain('id="import-result-root"');
     expect(html).toContain('id="query-workspace-root"');
     expect(html).toContain('id="query-logs-root"');
+    expect(html).toContain('id="database-demo-root"');
     expect(html).toContain("EventSource('/events/' + datasetId)");
     expect(html).toContain("setActiveTab('query')");
     expect(html).not.toContain('http-equiv="refresh"');

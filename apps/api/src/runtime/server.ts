@@ -37,6 +37,22 @@ export async function startApiServer(options: ApiServerOptions = {}): Promise<{
   close: () => Promise<void>;
   port: number;
 }> {
+  const codexRetainWorkspaces = readBooleanFromEnv("CODEX_RETAIN_WORKSPACES");
+  const codexPipelineCommandTimeoutMs = readPositiveIntegerFromEnv(
+    "CODEX_PIPELINE_COMMAND_TIMEOUT_MS"
+  );
+  const codexOptimizationCommandTimeoutMs = readPositiveIntegerFromEnv(
+    "CODEX_OPTIMIZATION_COMMAND_TIMEOUT_MS"
+  );
+  const codexPlaywrightMcpStartupTimeoutSec = readPositiveIntegerFromEnv(
+    "CODEX_PLAYWRIGHT_MCP_STARTUP_TIMEOUT_SEC"
+  );
+  const optimizationRetryBackoffMs = readPositiveIntegerFromEnv(
+    "OPTIMIZATION_RETRY_BACKOFF_MS"
+  );
+  const optimizationRetryLimitPerCandidate = readPositiveIntegerFromEnv(
+    "OPTIMIZATION_RETRY_LIMIT_PER_CANDIDATE"
+  );
   const database = await openSourceDatabase({
     databaseFilePath: resolve(
       options.databaseFilePath ??
@@ -55,7 +71,22 @@ export async function startApiServer(options: ApiServerOptions = {}): Promise<{
         process.env.CLEAN_DATABASE_DIRECTORY_PATH ??
         ".data/clean-databases"
     ),
-    codexPipelineGenerator: createCodexCliPipelineGenerator(),
+    codexPipelineGenerator: createCodexCliPipelineGenerator({
+      ...(process.env.CODEX_PIPELINE_MODEL
+        ? { model: process.env.CODEX_PIPELINE_MODEL }
+        : {}),
+      ...(codexPipelineCommandTimeoutMs !== undefined
+        ? { commandTimeoutMs: codexPipelineCommandTimeoutMs }
+        : {}),
+      ...(codexPlaywrightMcpStartupTimeoutSec !== undefined
+        ? {
+            playwrightMcpStartupTimeoutSec: codexPlaywrightMcpStartupTimeoutSec,
+          }
+        : {}),
+      ...(codexRetainWorkspaces !== undefined
+        ? { retainWorkspaceOnSuccess: codexRetainWorkspaces }
+        : {}),
+    }),
     onRunEvent: (runEvent) => {
       codexRunEventHub.publish(runEvent);
     },
@@ -76,7 +107,28 @@ export async function startApiServer(options: ApiServerOptions = {}): Promise<{
         process.env.CLEAN_DATABASE_DIRECTORY_PATH ??
         ".data/clean-databases"
     ),
-    codexOptimizationGenerator: createCodexCliOptimizationGenerator(),
+    codexOptimizationGenerator: createCodexCliOptimizationGenerator({
+      ...(process.env.CODEX_OPTIMIZATION_MODEL
+        ? { model: process.env.CODEX_OPTIMIZATION_MODEL }
+        : {}),
+      ...(codexOptimizationCommandTimeoutMs !== undefined
+        ? { commandTimeoutMs: codexOptimizationCommandTimeoutMs }
+        : {}),
+      ...(codexPlaywrightMcpStartupTimeoutSec !== undefined
+        ? {
+            playwrightMcpStartupTimeoutSec: codexPlaywrightMcpStartupTimeoutSec,
+          }
+        : {}),
+      ...(codexRetainWorkspaces !== undefined
+        ? { retainWorkspaceOnSuccess: codexRetainWorkspaces }
+        : {}),
+    }),
+    ...(optimizationRetryBackoffMs !== undefined
+      ? { optimizationRetryBackoffMs }
+      : {}),
+    ...(optimizationRetryLimitPerCandidate !== undefined
+      ? { optimizationRetryLimitPerCandidate }
+      : {}),
     onRunEvent: (runEvent) => {
       codexRunEventHub.publish(runEvent);
     },
@@ -99,6 +151,7 @@ export async function startApiServer(options: ApiServerOptions = {}): Promise<{
     },
   });
   const optimizationApi = createOptimizationApi({
+    queryLearningLoop,
     repository,
   });
   const port = options.port ?? Number(process.env.API_PORT ?? "3001");
@@ -212,4 +265,39 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   loadLocalEnvironment();
   const started = await startApiServer();
   console.log(`API server listening on http://127.0.0.1:${started.port}`);
+}
+
+function readPositiveIntegerFromEnv(name: string): number | undefined {
+  const rawValue = process.env[name];
+
+  if (!rawValue) {
+    return undefined;
+  }
+
+  const parsed = Number(rawValue);
+
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return undefined;
+  }
+
+  return parsed;
+}
+
+function readBooleanFromEnv(name: string): boolean | undefined {
+  const rawValue = process.env[name];
+
+  if (!rawValue) {
+    return undefined;
+  }
+
+  const normalized = rawValue.trim().toLowerCase();
+  if (normalized === "true" || normalized === "1" || normalized === "yes") {
+    return true;
+  }
+
+  if (normalized === "false" || normalized === "0" || normalized === "no") {
+    return false;
+  }
+
+  return undefined;
 }

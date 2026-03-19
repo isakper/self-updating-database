@@ -1,7 +1,10 @@
 import { mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
-import type { CodexPipelineGenerator } from "../../../../packages/agent-orchestrator/src/index.js";
+import {
+  CodexCommandError,
+  type CodexPipelineGenerator,
+} from "../../../../packages/agent-orchestrator/src/index.js";
 import {
   createQueuedImportProcessingState,
   createWorkbookImportSummary,
@@ -9,6 +12,7 @@ import {
 } from "../../../../packages/database-core/src/index.js";
 import type {
   CleanDatabaseSummary,
+  CodexRunFailureReasonCode,
   CodexRunEvent,
   PipelineRunRecord,
   PipelineVersionRecord,
@@ -51,7 +55,8 @@ export function createPipelineRetryScheduler(
     ((prefix: string) =>
       `${prefix}_${Math.random().toString(36).slice(2, 10)}`);
   const now = options.now ?? (() => new Date());
-  const inFlight = new Set<Promise<void>>();
+  const inFlight = new Map<string, Promise<void>>();
+  const pendingReschedule = new Set<string>();
 
   function recordRunEvent(
     runEvent: Omit<CodexRunEvent, "createdAt" | "eventId">
@@ -95,6 +100,7 @@ export function createPipelineRetryScheduler(
 
     let versionRecord: PipelineVersionRecord | null = null;
     let runRecord: PipelineRunRecord | null = null;
+    const startedAtMs = Date.parse(startedAt);
 
     try {
       const generated =
@@ -144,9 +150,10 @@ export function createPipelineRetryScheduler(
       const validation = options.sqlValidator.validate(generated.sqlText);
 
       if (!validation.isValid) {
-        throw new Error(validation.errors.join(" "));
+        throw new PipelineSqlValidationError(validation.errors.join(" "));
       }
       recordRunEvent({
+        elapsedMs: Date.now() - startedAtMs,
         message: "Generated pipeline SQL passed validation.",
         queryLogId: null,
         scope: "pipeline",
@@ -190,8 +197,8 @@ export function createPipelineRetryScheduler(
         stream: "system",
       });
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Pipeline generation failed.";
+      const failure = classifyPipelineFailure(error, startedAtMs);
+      const errorMessage = failure.message;
       const retryCount = previousState.pipelineRetryCount + 1;
       const nextRetryAt =
         retryCount < 5
@@ -223,8 +230,12 @@ export function createPipelineRetryScheduler(
         pipelineVersion: versionRecord,
       });
       recordRunEvent({
+        ...(failure.elapsedMs !== null ? { elapsedMs: failure.elapsedMs } : {}),
         message: errorMessage,
         queryLogId: null,
+        ...(failure.reasonCode !== null
+          ? { reasonCode: failure.reasonCode }
+          : {}),
         scope: "pipeline",
         sourceDatasetId: datasetId,
         stream: "system",
@@ -239,16 +250,26 @@ export function createPipelineRetryScheduler(
   }
 
   function schedule(datasetId: string): void {
+    if (inFlight.has(datasetId)) {
+      pendingReschedule.add(datasetId);
+      return;
+    }
+
     const task = processDataset(datasetId).finally(() => {
-      inFlight.delete(task);
+      inFlight.delete(datasetId);
+      if (pendingReschedule.delete(datasetId)) {
+        schedule(datasetId);
+      }
     });
 
-    inFlight.add(task);
+    inFlight.set(datasetId, task);
   }
 
   return {
-    drain() {
-      return Promise.all([...inFlight]).then(() => undefined);
+    async drain() {
+      while (inFlight.size > 0) {
+        await Promise.all([...inFlight.values()]);
+      }
     },
     resumePendingWork() {
       const nowIso = now().toISOString();
@@ -260,6 +281,64 @@ export function createPipelineRetryScheduler(
         });
     },
     schedule,
+  };
+}
+
+class PipelineSqlValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PipelineSqlValidationError";
+  }
+}
+
+function classifyPipelineFailure(
+  error: unknown,
+  startedAtMs: number
+): {
+  elapsedMs: number | null;
+  message: string;
+  reasonCode: CodexRunFailureReasonCode | null;
+} {
+  if (error instanceof CodexCommandError) {
+    return {
+      elapsedMs: error.elapsedMs,
+      message: error.message,
+      reasonCode: error.code,
+    };
+  }
+
+  if (error instanceof PipelineSqlValidationError) {
+    return {
+      elapsedMs: Date.now() - startedAtMs,
+      message: error.message,
+      reasonCode: "sql_validation",
+    };
+  }
+
+  if (
+    error instanceof Error &&
+    (error.message.includes("analysis.json") ||
+      error.message.includes("summary.md"))
+  ) {
+    return {
+      elapsedMs: Date.now() - startedAtMs,
+      message: error.message,
+      reasonCode: "artifact_contract",
+    };
+  }
+
+  if (error instanceof Error) {
+    return {
+      elapsedMs: Date.now() - startedAtMs,
+      message: error.message,
+      reasonCode: "runtime_error",
+    };
+  }
+
+  return {
+    elapsedMs: Date.now() - startedAtMs,
+    message: "Pipeline generation failed.",
+    reasonCode: "runtime_error",
   };
 }
 

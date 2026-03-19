@@ -77,6 +77,7 @@ describe("query api", () => {
     expect(storedLog?.patternFingerprint).toEqual(expect.any(String));
     expect(storedLog?.queryKind).toBe("aggregate");
     expect(storedLog?.rowCount).toBe(1);
+    expect(storedLog?.resultRowsSample).toStrictEqual([["North", 25]]);
     expect(storedLog?.status).toBe("succeeded");
     expect(storedLog?.usedOptimizationObjects).toStrictEqual([]);
     expect(scheduledDatasets).toStrictEqual(["dataset_1"]);

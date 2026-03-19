@@ -8,8 +8,10 @@ import type {
   OptimizationHint,
   OptimizationRevisionDecision,
 } from "../../shared/src/index.js";
+import { parseAnalysisArtifact } from "./codex-cli.js";
 import { inspectCleanDatabase } from "./query-llm.js";
 import {
+  type RequiredArtifact,
   readRequiredArtifact,
   runCodexCommand,
 } from "./codex-command-runner.js";
@@ -45,6 +47,7 @@ export interface CodexCliOptimizationGeneratorOptions {
   model?: string;
   playwrightMcpStartupTimeoutSec?: number;
   processExitGracePeriodMs?: number;
+  retainWorkspaceOnSuccess?: boolean;
 }
 
 export function createCodexCliOptimizationGenerator(
@@ -56,6 +59,7 @@ export function createCodexCliOptimizationGenerator(
   const playwrightMcpStartupTimeoutSec =
     options.playwrightMcpStartupTimeoutSec ?? 10;
   const processExitGracePeriodMs = options.processExitGracePeriodMs ?? 1_000;
+  const retainWorkspaceOnSuccess = options.retainWorkspaceOnSuccess ?? false;
 
   return {
     async generateOptimizationArtifacts(input) {
@@ -88,6 +92,35 @@ export function createCodexCliOptimizationGenerator(
       ]);
 
       try {
+        const requiredArtifacts: RequiredArtifact[] = [
+          {
+            filePath: join(workspacePath, "decision.json"),
+            validateContents(contents) {
+              parseDecisionArtifact(contents);
+            },
+          },
+          {
+            filePath: join(workspacePath, "pipeline.sql"),
+          },
+          {
+            filePath: join(workspacePath, "analysis.json"),
+            validateContents(contents) {
+              const analysis = parseAnalysisArtifact(contents);
+              if (analysis.sourceDatasetId !== input.sourceDatasetId) {
+                throw new Error(
+                  `analysis.json sourceDatasetId mismatch: expected ${input.sourceDatasetId}, received ${analysis.sourceDatasetId}.`
+                );
+              }
+            },
+          },
+          {
+            filePath: join(workspacePath, "summary.md"),
+            validateContents(contents) {
+              validateMarkdownArtifact(contents, "summary.md");
+            },
+          },
+        ];
+
         await runCodexCommand(
           codexCommand,
           [
@@ -104,12 +137,7 @@ export function createCodexCliOptimizationGenerator(
           ],
           prompt,
           workspacePath,
-          [
-            join(workspacePath, "decision.json"),
-            join(workspacePath, "pipeline.sql"),
-            join(workspacePath, "analysis.json"),
-            join(workspacePath, "summary.md"),
-          ],
+          requiredArtifacts,
           {
             artifactPollIntervalMs,
             commandTimeoutMs,
@@ -146,9 +174,15 @@ export function createCodexCliOptimizationGenerator(
           join(workspacePath, "summary.md")
         );
         const decision = parseDecisionArtifact(decisionText);
+        const parsedAnalysis = parseAnalysisArtifact(analysisJsonText);
+        if (parsedAnalysis.sourceDatasetId !== input.sourceDatasetId) {
+          throw new Error(
+            `analysis.json sourceDatasetId mismatch: expected ${input.sourceDatasetId}, received ${parsedAnalysis.sourceDatasetId}.`
+          );
+        }
 
-        return {
-          analysisJson: JSON.parse(analysisJsonText) as Record<string, unknown>,
+        const result: GeneratedOptimizationArtifacts = {
+          analysisJson: parsedAnalysis as unknown as Record<string, unknown>,
           decision: decision.decision,
           optimizationHints: decision.optimizationHints,
           prompt,
@@ -156,12 +190,27 @@ export function createCodexCliOptimizationGenerator(
           summaryMarkdown,
           workspacePath,
         };
+
+        if (!retainWorkspaceOnSuccess) {
+          await rm(workspacePath, { force: true, recursive: true });
+        }
+
+        return result;
       } catch (error) {
         await rm(workspacePath, { force: true, recursive: true });
         throw error;
       }
     },
   };
+}
+
+function validateMarkdownArtifact(
+  contents: string,
+  artifactLabel: string
+): void {
+  if (contents.trim().length === 0) {
+    throw new Error(`${artifactLabel} must be non-empty markdown text.`);
+  }
 }
 
 export function buildCodexOptimizationPrompt(options: {
