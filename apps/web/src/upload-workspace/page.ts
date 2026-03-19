@@ -6,13 +6,16 @@ import type {
 import { buildUploadWorkspaceModel } from "./model.js";
 import { buildQueryWorkspaceModel } from "../query-workspace/model.js";
 
-type WorkspaceTabName = "upload" | "query" | "logs";
+type WorkspaceTabName = "upload" | "query" | "logs" | "demo";
 
 export function renderUploadWorkspacePage(options?: {
   activeTab?: WorkspaceTabName;
   importSummary?: WorkbookImportSummary;
   queryLogs?: QueryExecutionLog[];
+  sourceDatabasePathHint?: string;
   errorMessage?: string;
+  operatorErrorMessage?: string;
+  operatorMessage?: string;
   queryErrorMessage?: string;
   queryLogsErrorMessage?: string;
   queryPrompt?: string;
@@ -276,6 +279,42 @@ export function renderUploadWorkspacePage(options?: {
         max-width: 420px;
         max-height: 180px;
       }
+      .demo-step-list {
+        display: grid;
+        gap: 16px;
+      }
+      .demo-step {
+        border: 1px solid rgba(28, 26, 23, 0.08);
+        border-radius: 16px;
+        padding: 16px;
+        background: #fcfaf5;
+      }
+      .demo-step h3 {
+        margin-top: 0;
+      }
+      .demo-step pre {
+        margin-top: 10px;
+      }
+      .diagram {
+        display: grid;
+        gap: 10px;
+      }
+      .diagram-node {
+        border: 1px solid rgba(28, 26, 23, 0.14);
+        border-radius: 14px;
+        padding: 12px 14px;
+        background: #fff;
+        font-weight: 600;
+      }
+      .diagram-arrow {
+        color: #7a6850;
+        font-weight: 700;
+        text-align: center;
+      }
+      .diagram-note {
+        font-size: 0.9rem;
+        color: #5f5548;
+      }
       @media (max-width: 900px) {
         .workspace-shell {
           grid-template-columns: 1fr;
@@ -339,6 +378,18 @@ export function renderUploadWorkspacePage(options?: {
               >
                 <span class="nav-tab-label">Query History + SQL Logs</span>
                 <span class="nav-tab-detail">Inspect previous prompts, generated SQL, timing, and execution outcome in one place.</span>
+              </button>
+              <button
+                class="nav-tab"
+                data-active="${String(activeTab === "demo")}"
+                data-tab-button="demo"
+                id="tab-button-demo"
+                role="tab"
+                aria-selected="${String(activeTab === "demo")}"
+                aria-controls="tab-panel-demo"
+              >
+                <span class="nav-tab-label">DB Walkthrough + Flow Diagram</span>
+                <span class="nav-tab-detail">Use these exact DB checkpoints and SQL snippets for a technical demo story.</span>
               </button>
             </div>
           </div>
@@ -407,6 +458,20 @@ export function renderUploadWorkspacePage(options?: {
               <p>Use this view during demos to show what has already been asked, what SQL was generated, how long it took, and whether the query succeeded.</p>
             </div>
             <div id="query-logs-root">${fragments.queryLogsHtml}</div>
+          </section>
+          <section
+            class="tab-panel"
+            data-active="${String(activeTab === "demo")}"
+            data-tab-panel="demo"
+            id="tab-panel-demo"
+            role="tabpanel"
+            aria-labelledby="tab-button-demo"
+          >
+            <div class="tab-intro">
+              <h2>Database-first demo flow</h2>
+              <p>Walk through the product as a technical system: source workbook in DB, query logs in DB, high-level learning loop, then query result rows written back to DB.</p>
+            </div>
+            <div id="database-demo-root">${fragments.databaseDemoHtml}</div>
           </section>
         </div>
       </section>
@@ -535,6 +600,7 @@ export function renderUploadWorkspacePage(options?: {
                     );
                   }
                   replaceFragment('query-logs-root', payload.queryLogsHtml);
+                  replaceFragment('database-demo-root', payload.databaseDemoHtml);
                 } finally {
                   refreshInFlight = false;
                 }
@@ -627,6 +693,7 @@ export function renderUploadWorkspacePage(options?: {
                     'query-stream-output'
                   );
                   replaceFragment('query-logs-root', payload.queryLogsHtml);
+                  replaceFragment('database-demo-root', payload.databaseDemoHtml);
                   scheduleRefreshViewState();
                 } finally {
                   queryStreamActive = false;
@@ -642,12 +709,16 @@ export function renderUploadWorkspacePage(options?: {
 
 export function renderWorkspaceFragments(options?: {
   importSummary?: WorkbookImportSummary;
+  operatorErrorMessage?: string;
+  operatorMessage?: string;
   queryLogs?: QueryExecutionLog[];
+  sourceDatabasePathHint?: string;
   queryErrorMessage?: string;
   queryLogsErrorMessage?: string;
   queryPrompt?: string;
   queryResponse?: NaturalLanguageQueryResponse;
 }): {
+  databaseDemoHtml: string;
   importResultHtml: string;
   queryLogsHtml: string;
   queryWorkspaceHtml: string;
@@ -664,6 +735,11 @@ export function renderWorkspaceFragments(options?: {
   };
 
   return {
+    databaseDemoHtml: renderDatabaseDemoHtml(
+      options?.importSummary,
+      options?.queryLogs ?? [],
+      options?.sourceDatabasePathHint
+    ),
     importResultHtml: renderImportResultHtml(
       options?.importSummary,
       options?.queryLogs ?? []
@@ -671,7 +747,9 @@ export function renderWorkspaceFragments(options?: {
     queryLogsHtml: renderQueryLogsHtml(
       options?.importSummary,
       options?.queryLogs ?? [],
-      options?.queryLogsErrorMessage
+      options?.queryLogsErrorMessage,
+      options?.operatorMessage,
+      options?.operatorErrorMessage
     ),
     queryWorkspaceHtml: renderQueryWorkspaceHtml(queryWorkspaceOptions),
   };
@@ -824,10 +902,131 @@ function renderQueryWorkspaceHtml(options: {
   `;
 }
 
+function renderDatabaseDemoHtml(
+  importSummary: WorkbookImportSummary | undefined,
+  queryLogs: QueryExecutionLog[],
+  sourceDatabasePathHint?: string
+): string {
+  if (!importSummary) {
+    return `
+      <section class="panel">
+        <p>Import the demo workbook first to unlock the DB walkthrough SQL snippets.</p>
+      </section>
+    `;
+  }
+
+  const sourceDatasetId = importSummary.sourceDatasetId;
+  const firstSourceTableName = importSummary.sheets[0]?.sourceTableName;
+  const sourceDbPath = sourceDatabasePathHint ?? ".data/source-datasets.sqlite";
+  const cleanDbPath =
+    importSummary.processing.cleanDatabase?.databaseFilePath ??
+    "Pending (clean database build has not completed yet)";
+
+  const sourceTablesSql = `SELECT
+  s.dataset_id,
+  d.workbook_name,
+  s.name AS sheet_name,
+  s.source_table_name,
+  s.sheet_order,
+  json_extract(s.column_names_json, '$') AS columns
+FROM source_sheets s
+JOIN source_datasets d ON d.id = s.dataset_id
+WHERE s.dataset_id = '${escapeSqlString(sourceDatasetId)}'
+ORDER BY s.sheet_order ASC;`;
+
+  const sourceRowsSql = firstSourceTableName
+    ? `SELECT * FROM "${firstSourceTableName}" ORDER BY "__source_row_number" ASC LIMIT 15;`
+    : "-- no source sheet tables available yet";
+
+  const queryLogsSql = `SELECT
+  query_log_id,
+  prompt,
+  status,
+  row_count,
+  total_latency_ms,
+  generation_started_at
+FROM query_execution_logs
+WHERE source_dataset_id = '${escapeSqlString(sourceDatasetId)}'
+ORDER BY generation_started_at DESC, query_log_id DESC
+LIMIT 30;`;
+
+  const queryResultsSql = `SELECT
+  query_log_id,
+  prompt,
+  row_count,
+  result_column_names_json,
+  result_rows_sample_json
+FROM query_execution_logs
+WHERE source_dataset_id = '${escapeSqlString(sourceDatasetId)}'
+ORDER BY generation_started_at DESC, query_log_id DESC
+LIMIT 20;`;
+
+  return `
+    <section class="stack">
+      <section class="panel">
+        <h2>High-level flow diagram</h2>
+        <div class="diagram">
+          <div class="diagram-node">1. Excel workbook upload -> immutable source tables in source DB</div>
+          <div class="diagram-arrow">↓</div>
+          <div class="diagram-node">2. Codex generates pipeline.sql -> clean DB is built from source DB</div>
+          <div class="diagram-arrow">↓</div>
+          <div class="diagram-node">3. Natural language query -> generated SQL -> execution log stored</div>
+          <div class="diagram-arrow">↓</div>
+          <div class="diagram-node">4. Repeated query patterns cluster -> optimization revision proposals</div>
+        </div>
+        <p class="diagram-note">Invariant: the source database remains immutable; improvements happen in derived clean databases and pipeline revisions.</p>
+      </section>
+      <section class="panel">
+        <h2>Database checkpoints for a technical demo</h2>
+        <p><strong>Source DB path:</strong> ${escapeHtml(sourceDbPath)}</p>
+        <p><strong>Clean DB path:</strong> ${escapeHtml(cleanDbPath)}</p>
+        <p><strong>Dataset:</strong> ${escapeHtml(sourceDatasetId)} (${escapeHtml(importSummary.workbookName)})</p>
+        <p><strong>Observed query logs in this workspace:</strong> ${escapeHtml(String(queryLogs.length))}</p>
+        <div class="demo-step-list">
+          <article class="demo-step">
+            <h3>Step 1: Show the demo Excel as database tables</h3>
+            <p>Run this in your SQLite viewer against the source database:</p>
+            <pre>${escapeHtml(sourceTablesSql)}</pre>
+            <p>Then inspect rows from one imported sheet table:</p>
+            <pre>${escapeHtml(sourceRowsSql)}</pre>
+          </article>
+          <article class="demo-step">
+            <h3>Step 2: Show demo logs stored in DB</h3>
+            <p>Run this in the same source database:</p>
+            <pre>${escapeHtml(queryLogsSql)}</pre>
+          </article>
+          <article class="demo-step">
+            <h3>Step 3: Explain the self-updating concept</h3>
+            <p>Use the flow diagram above, then show that clustering and revisions are also persisted:</p>
+            <pre>${escapeHtml(`SELECT query_cluster_id, query_count, cumulative_execution_latency_ms, latest_optimization_decision
+FROM query_clusters
+WHERE source_dataset_id = '${escapeSqlString(sourceDatasetId)}'
+ORDER BY cumulative_execution_latency_ms DESC
+LIMIT 20;
+
+SELECT optimization_revision_id, decision, status, created_at, updated_at
+FROM optimization_revisions
+WHERE source_dataset_id = '${escapeSqlString(sourceDatasetId)}'
+ORDER BY created_at DESC
+LIMIT 20;`)}</pre>
+          </article>
+          <article class="demo-step">
+            <h3>Step 4: Show results after running queries, directly in DB</h3>
+            <p>Each query log now stores a compact row sample in <code>result_rows_sample_json</code>.</p>
+            <pre>${escapeHtml(queryResultsSql)}</pre>
+          </article>
+        </div>
+      </section>
+    </section>
+  `;
+}
+
 function renderQueryLogsHtml(
   importSummary: WorkbookImportSummary | undefined,
   queryLogs: QueryExecutionLog[],
-  queryLogsErrorMessage?: string
+  queryLogsErrorMessage?: string,
+  operatorMessage?: string,
+  operatorErrorMessage?: string
 ): string {
   if (!importSummary) {
     return "";
@@ -837,8 +1036,36 @@ function renderQueryLogsHtml(
     <section class="panel">
       <h2>Recent query history</h2>
       ${
+        operatorMessage
+          ? `<div class="badge">${escapeHtml(operatorMessage)}</div>`
+          : ""
+      }
+      ${
+        operatorErrorMessage
+          ? `<div class="error" role="alert">${escapeHtml(operatorErrorMessage)}</div>`
+          : ""
+      }
+      ${
         importSummary.processing.cleanDatabaseStatus === "succeeded"
           ? `
+            <form
+              method="post"
+              action="/imports/${escapeHtml(importSummary.sourceDatasetId)}/pipeline/rerun"
+            >
+              <button type="submit">Rerun pipeline</button>
+            </form>
+            <form
+              method="post"
+              action="/imports/${escapeHtml(importSummary.sourceDatasetId)}/optimization/run"
+            >
+              <button type="submit">Run optimization now</button>
+            </form>
+            <form
+              method="post"
+              action="/imports/${escapeHtml(importSummary.sourceDatasetId)}/optimization/retry-failed"
+            >
+              <button type="submit">Retry latest failed optimization</button>
+            </form>
             <form
               method="post"
               action="/imports/${escapeHtml(importSummary.sourceDatasetId)}/query-logs/import"
@@ -952,4 +1179,8 @@ function escapeHtml(value: string): string {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function escapeSqlString(value: string): string {
+  return value.replaceAll("'", "''");
 }

@@ -28,6 +28,16 @@ export type CodexRunScope = "pipeline" | "query" | "optimization";
 
 export type CodexRunStream = "stderr" | "stdout" | "system";
 
+export type CodexRunFailureReasonCode =
+  | "artifact_contract"
+  | "missing_artifacts"
+  | "process_exit"
+  | "retry_exhausted"
+  | "runtime_error"
+  | "sql_validation"
+  | "startup_failure"
+  | "timeout";
+
 export interface SourceSheetSummary {
   sheetName: string;
   columnNames: string[];
@@ -102,9 +112,11 @@ export interface WorkbookImportSummary {
 
 export interface CodexRunEvent {
   createdAt: string;
+  elapsedMs?: number | null;
   eventId: string;
   message: string;
   queryLogId: string | null;
+  reasonCode?: CodexRunFailureReasonCode | null;
   scope: CodexRunScope;
   sourceDatasetId: string;
   stream: CodexRunStream;

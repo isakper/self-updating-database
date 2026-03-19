@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
+import { CodexCommandError } from "../../../../packages/agent-orchestrator/src/index.js";
 import type {
   CodexOptimizationGenerator,
   GeneratedOptimizationArtifacts,
@@ -14,6 +15,7 @@ import type {
   CleanDatabaseSummary,
   CodexRunEvent,
   OptimizationCandidateSet,
+  OptimizationFailureReasonCode,
   OptimizationRevision,
   PipelineRunRecord,
   PipelineVersionRecord,
@@ -32,6 +34,11 @@ export interface OptimizationSqlValidator {
 export interface QueryLearningLoop {
   drain(): Promise<void>;
   schedule(sourceDatasetId: string): void;
+  triggerRun(sourceDatasetId: string): { accepted: boolean; message: string };
+  retryLatestFailedRevision(sourceDatasetId: string): {
+    accepted: boolean;
+    message: string;
+  };
 }
 
 export interface CreateQueryLearningLoopOptions {
@@ -41,10 +48,28 @@ export interface CreateQueryLearningLoopOptions {
   codexOptimizationGenerator: CodexOptimizationGenerator;
   now?: () => Date;
   onRunEvent?: (runEvent: CodexRunEvent) => void;
+  optimizationRetryBackoffMs?: number;
+  optimizationRetryLimitPerCandidate?: number;
   repository: IngestionRepository;
   sourceDatabasePath: string;
   sqlValidator: OptimizationSqlValidator;
 }
+
+interface OptimizationRunRequest {
+  allowFailedCandidateRetry: boolean;
+  mode: "auto" | "manual" | "retry_latest_failed";
+  preferredCandidateFingerprint?: string;
+}
+
+const AUTO_OPTIMIZATION_REQUEST: OptimizationRunRequest = {
+  allowFailedCandidateRetry: false,
+  mode: "auto",
+};
+
+const MANUAL_OPTIMIZATION_REQUEST: OptimizationRunRequest = {
+  allowFailedCandidateRetry: true,
+  mode: "manual",
+};
 
 export function createQueryLearningLoop(
   options: CreateQueryLearningLoopOptions
@@ -54,7 +79,12 @@ export function createQueryLearningLoop(
     ((prefix: string) =>
       `${prefix}_${Math.random().toString(36).slice(2, 10)}`);
   const now = options.now ?? (() => new Date());
+  const optimizationRetryBackoffMs =
+    options.optimizationRetryBackoffMs ?? 5_000;
+  const optimizationRetryLimitPerCandidate =
+    options.optimizationRetryLimitPerCandidate ?? 3;
   const inFlight = new Map<string, Promise<void>>();
+  const pendingRequests = new Map<string, OptimizationRunRequest>();
 
   function recordRunEvent(
     runEvent: Omit<CodexRunEvent, "createdAt" | "eventId">
@@ -69,7 +99,10 @@ export function createQueryLearningLoop(
     options.onRunEvent?.(persistedRunEvent);
   }
 
-  async function processDataset(sourceDatasetId: string): Promise<void> {
+  async function processDataset(
+    sourceDatasetId: string,
+    request: OptimizationRunRequest
+  ): Promise<void> {
     const processingState =
       options.repository.getImportProcessingState(sourceDatasetId);
     const cleanDatabase = processingState?.cleanDatabase;
@@ -105,32 +138,72 @@ export function createQueryLearningLoop(
 
     const topClusters = rankCandidateClusters(currentClusters).slice(0, 2);
 
-    if (topClusters.length < 2) {
+    const revisions = options.repository.listOptimizationRevisions(
+      sourceDatasetId,
+      200
+    );
+    const candidateSelection = selectCandidateSetForRequest({
+      request,
+      revisions,
+      topClusters,
+      cleanDatabase,
+      pipelineVersion,
+      sourceDatasetId,
+    });
+
+    if (!candidateSelection) {
       return;
     }
 
-    const candidateSet = buildOptimizationCandidateSet({
-      cleanDatabase,
-      pipelineVersion,
-      queryClusters: topClusters,
-      sourceDatasetId,
-    });
-    const existingRevision = options.repository
-      .listOptimizationRevisions(sourceDatasetId, 100)
-      .find(
-        (revision) =>
-          revision.candidateSet.candidateSetFingerprint ===
-            candidateSet.candidateSetFingerprint &&
-          revision.baseCleanDatabaseId === candidateSet.baseCleanDatabaseId &&
-          revision.basePipelineVersionId === candidateSet.basePipelineVersionId
-      );
+    const candidateSet = candidateSelection.candidateSet;
+    const candidateClusters = candidateSelection.queryClusters;
+    const matchingRevisions = revisions.filter((revision) =>
+      isSameCandidateSet(revision, candidateSet)
+    );
+    const blockingRevision = matchingRevisions.find(
+      (revision) =>
+        revision.status === "queued" ||
+        revision.status === "running" ||
+        revision.status === "succeeded"
+    );
 
-    if (existingRevision) {
+    if (blockingRevision) {
       return;
+    }
+
+    const failedRevisions = matchingRevisions
+      .filter((revision) => revision.status === "failed")
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+
+    if (failedRevisions.length >= optimizationRetryLimitPerCandidate) {
+      recordRunEvent({
+        message: `Skipping optimization for ${sourceDatasetId}: retry limit reached for candidate fingerprint ${candidateSet.candidateSetFingerprint}.`,
+        queryLogId: null,
+        reasonCode: "retry_exhausted",
+        scope: "optimization",
+        sourceDatasetId,
+        stream: "system",
+      });
+      return;
+    }
+
+    if (!request.allowFailedCandidateRetry && failedRevisions.length > 0) {
+      const latestFailedRevision = failedRevisions.at(0);
+
+      if (!latestFailedRevision) {
+        return;
+      }
+
+      const elapsedSinceLatestFailureMs =
+        Date.now() - Date.parse(latestFailedRevision.updatedAt);
+      if (elapsedSinceLatestFailureMs < optimizationRetryBackoffMs) {
+        return;
+      }
     }
 
     const revisionId = createId("optimization_revision");
     const startedAt = now().toISOString();
+    const startedAtMs = Date.parse(startedAt);
     let revision = createOptimizationRevision({
       analysisJson: {
         candidateSetFingerprint: candidateSet.candidateSetFingerprint,
@@ -156,6 +229,7 @@ export function createQueryLearningLoop(
     try {
       revision = {
         ...revision,
+        failureReasonCode: null,
         status: "running",
         updatedAt: now().toISOString(),
       };
@@ -183,6 +257,7 @@ export function createQueryLearningLoop(
           ...revision,
           analysisJson: generated.analysisJson,
           decision: "no_change",
+          failureReasonCode: null,
           optimizationHints: generated.optimizationHints,
           promptMarkdown: generated.prompt,
           status: "succeeded",
@@ -191,11 +266,12 @@ export function createQueryLearningLoop(
         };
         options.repository.saveOptimizationRevision(completedRevision);
         persistClusterDecision(
-          topClusters,
+          candidateClusters,
           completedRevision,
           options.repository
         );
         recordRunEvent({
+          elapsedMs: Date.now() - startedAtMs,
           message: "Optimization evaluation completed with no pipeline change.",
           queryLogId: null,
           scope: "optimization",
@@ -208,7 +284,7 @@ export function createQueryLearningLoop(
       const validation = options.sqlValidator.validate(generated.sqlText);
 
       if (!validation.isValid) {
-        throw new Error(validation.errors.join(" "));
+        throw new OptimizationSqlValidationError(validation.errors.join(" "));
       }
 
       const candidatePipelineVersion: PipelineVersionRecord = {
@@ -271,6 +347,7 @@ export function createQueryLearningLoop(
         appliedCleanDatabaseId: candidateCleanDatabase.cleanDatabaseId,
         candidatePipelineVersionId: candidatePipelineVersion.pipelineVersionId,
         decision: "pipeline_revision",
+        failureReasonCode: null,
         optimizationHints: generated.optimizationHints,
         promptMarkdown: generated.prompt,
         status: "succeeded",
@@ -279,11 +356,12 @@ export function createQueryLearningLoop(
       };
       options.repository.saveOptimizationRevision(completedRevision);
       persistClusterDecision(
-        topClusters,
+        candidateClusters,
         completedRevision,
         options.repository
       );
       recordRunEvent({
+        elapsedMs: Date.now() - startedAtMs,
         message: `Optimization applied with pipeline ${candidatePipelineVersion.pipelineVersionId}.`,
         queryLogId: null,
         scope: "optimization",
@@ -291,20 +369,20 @@ export function createQueryLearningLoop(
         stream: "system",
       });
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Optimization evaluation failed.";
+      const failure = classifyOptimizationFailure(error, startedAtMs);
       const failedRevision: OptimizationRevision = {
         ...revision,
-        errorMessage: message,
+        errorMessage: failure.message,
+        failureReasonCode: failure.reasonCode,
         status: "failed",
         updatedAt: now().toISOString(),
       };
       options.repository.saveOptimizationRevision(failedRevision);
       recordRunEvent({
-        message,
+        ...(failure.elapsedMs !== null ? { elapsedMs: failure.elapsedMs } : {}),
+        message: failure.message,
         queryLogId: null,
+        ...(failure.reasonCode ? { reasonCode: failure.reasonCode } : {}),
         scope: "optimization",
         sourceDatasetId,
         stream: "system",
@@ -312,20 +390,216 @@ export function createQueryLearningLoop(
     }
   }
 
+  function enqueue(
+    sourceDatasetId: string,
+    request: OptimizationRunRequest
+  ): { accepted: boolean; message: string } {
+    if (inFlight.has(sourceDatasetId)) {
+      const mergedRequest = mergeOptimizationRunRequest(
+        pendingRequests.get(sourceDatasetId) ?? AUTO_OPTIMIZATION_REQUEST,
+        request
+      );
+      pendingRequests.set(sourceDatasetId, mergedRequest);
+      return {
+        accepted: true,
+        message: `Optimization already running for ${sourceDatasetId}; queued next run.`,
+      };
+    }
+
+    const task = processDataset(sourceDatasetId, request).finally(() => {
+      inFlight.delete(sourceDatasetId);
+      const pendingRequest = pendingRequests.get(sourceDatasetId);
+      if (pendingRequest) {
+        pendingRequests.delete(sourceDatasetId);
+        void enqueue(sourceDatasetId, pendingRequest);
+      }
+    });
+    inFlight.set(sourceDatasetId, task);
+
+    return {
+      accepted: true,
+      message: `Optimization run scheduled for ${sourceDatasetId}.`,
+    };
+  }
+
   return {
-    drain() {
-      return Promise.all([...inFlight.values()]).then(() => undefined);
+    async drain() {
+      while (inFlight.size > 0) {
+        await Promise.all([...inFlight.values()]);
+      }
     },
     schedule(sourceDatasetId) {
-      if (inFlight.has(sourceDatasetId)) {
-        return;
+      void enqueue(sourceDatasetId, AUTO_OPTIMIZATION_REQUEST);
+    },
+    triggerRun(sourceDatasetId) {
+      return enqueue(sourceDatasetId, MANUAL_OPTIMIZATION_REQUEST);
+    },
+    retryLatestFailedRevision(sourceDatasetId) {
+      const latestFailedRevision = options.repository
+        .listOptimizationRevisions(sourceDatasetId, 200)
+        .find((revision) => revision.status === "failed");
+
+      if (!latestFailedRevision) {
+        return {
+          accepted: false,
+          message: `No failed optimization revision available for ${sourceDatasetId}.`,
+        };
       }
 
-      const task = processDataset(sourceDatasetId).finally(() => {
-        inFlight.delete(sourceDatasetId);
+      return enqueue(sourceDatasetId, {
+        allowFailedCandidateRetry: true,
+        mode: "retry_latest_failed",
+        preferredCandidateFingerprint:
+          latestFailedRevision.candidateSet.candidateSetFingerprint,
       });
-      inFlight.set(sourceDatasetId, task);
     },
+  };
+}
+
+class OptimizationSqlValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OptimizationSqlValidationError";
+  }
+}
+
+function selectCandidateSetForRequest(options: {
+  cleanDatabase: CleanDatabaseSummary;
+  pipelineVersion: PipelineVersionRecord;
+  request: OptimizationRunRequest;
+  revisions: OptimizationRevision[];
+  sourceDatasetId: string;
+  topClusters: QueryCluster[];
+}): {
+  candidateSet: OptimizationCandidateSet;
+  queryClusters: QueryCluster[];
+} | null {
+  if (options.request.preferredCandidateFingerprint) {
+    const preferredRevision = options.revisions.find(
+      (revision) =>
+        revision.status === "failed" &&
+        revision.candidateSet.candidateSetFingerprint ===
+          options.request.preferredCandidateFingerprint
+    );
+
+    if (!preferredRevision) {
+      return null;
+    }
+
+    if (
+      preferredRevision.candidateSet.baseCleanDatabaseId !==
+        options.cleanDatabase.cleanDatabaseId ||
+      preferredRevision.candidateSet.basePipelineVersionId !==
+        options.pipelineVersion.pipelineVersionId
+    ) {
+      return null;
+    }
+
+    return {
+      candidateSet: preferredRevision.candidateSet,
+      queryClusters: preferredRevision.candidateSet.queryClusters,
+    };
+  }
+
+  if (options.topClusters.length < 2) {
+    return null;
+  }
+
+  return {
+    candidateSet: buildOptimizationCandidateSet({
+      cleanDatabase: options.cleanDatabase,
+      pipelineVersion: options.pipelineVersion,
+      queryClusters: options.topClusters,
+      sourceDatasetId: options.sourceDatasetId,
+    }),
+    queryClusters: options.topClusters,
+  };
+}
+
+function mergeOptimizationRunRequest(
+  current: OptimizationRunRequest,
+  incoming: OptimizationRunRequest
+): OptimizationRunRequest {
+  if (incoming.mode === "retry_latest_failed") {
+    return incoming;
+  }
+
+  if (current.mode === "retry_latest_failed") {
+    return current;
+  }
+
+  if (incoming.mode === "manual") {
+    return incoming;
+  }
+
+  if (current.mode === "manual") {
+    return current;
+  }
+
+  return current;
+}
+
+function isSameCandidateSet(
+  revision: OptimizationRevision,
+  candidateSet: OptimizationCandidateSet
+): boolean {
+  return (
+    revision.candidateSet.candidateSetFingerprint ===
+      candidateSet.candidateSetFingerprint &&
+    revision.baseCleanDatabaseId === candidateSet.baseCleanDatabaseId &&
+    revision.basePipelineVersionId === candidateSet.basePipelineVersionId
+  );
+}
+
+function classifyOptimizationFailure(
+  error: unknown,
+  startedAtMs: number
+): {
+  elapsedMs: number | null;
+  message: string;
+  reasonCode: OptimizationFailureReasonCode;
+} {
+  if (error instanceof CodexCommandError) {
+    return {
+      elapsedMs: error.elapsedMs,
+      message: error.message,
+      reasonCode: error.code as OptimizationFailureReasonCode,
+    };
+  }
+
+  if (error instanceof OptimizationSqlValidationError) {
+    return {
+      elapsedMs: Date.now() - startedAtMs,
+      message: error.message,
+      reasonCode: "sql_validation",
+    };
+  }
+
+  if (
+    error instanceof Error &&
+    (error.message.includes("decision.json") ||
+      error.message.includes("analysis.json") ||
+      error.message.includes("summary.md"))
+  ) {
+    return {
+      elapsedMs: Date.now() - startedAtMs,
+      message: error.message,
+      reasonCode: "artifact_contract",
+    };
+  }
+
+  if (error instanceof Error) {
+    return {
+      elapsedMs: Date.now() - startedAtMs,
+      message: error.message,
+      reasonCode: "runtime_error",
+    };
+  }
+
+  return {
+    elapsedMs: Date.now() - startedAtMs,
+    message: "Optimization evaluation failed.",
+    reasonCode: "runtime_error",
   };
 }
 
@@ -515,6 +789,7 @@ function createOptimizationRevision(options: {
     createdAt: options.createdAt,
     decision: options.decision,
     errorMessage: null,
+    failureReasonCode: null,
     optimizationHints: [],
     optimizationRevisionId: options.optimizationRevisionId,
     promptMarkdown: options.promptMarkdown,

@@ -143,6 +143,62 @@ describe("pipeline retry scheduler", () => {
     });
     expect(processingState?.nextRetryAt).toBeNull();
   });
+
+  it("deduplicates in-flight scheduling per dataset to avoid parallel runs", async () => {
+    const repository = seedRepository();
+    let concurrentRuns = 0;
+    let maxConcurrentRuns = 0;
+
+    const scheduler = createPipelineRetryScheduler({
+      cleanDatabaseBuilder: {
+        buildCleanDatabase(options) {
+          return Promise.resolve({
+            builtAt: options.builtAt,
+            cleanDatabaseId: options.cleanDatabaseId,
+            databaseFilePath: options.cleanDatabasePath,
+          });
+        },
+      },
+      cleanDatabaseDirectoryPath: ".data/test-clean-dbs",
+      codexPipelineGenerator: {
+        async generatePipelineArtifacts() {
+          concurrentRuns += 1;
+          maxConcurrentRuns = Math.max(maxConcurrentRuns, concurrentRuns);
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          concurrentRuns -= 1;
+
+          return {
+            analysisJson: {
+              findings: [],
+              sourceDatasetId: "dataset_1",
+              summary: "ok",
+            },
+            prompt: "prompt",
+            sqlText:
+              "DROP TABLE IF EXISTS clean_orders; CREATE TABLE clean_orders AS SELECT 1 AS ok;",
+            summaryMarkdown: "summary",
+            workspacePath: "/tmp/codex-workspace",
+          };
+        },
+      },
+      repository,
+      retryDelayMs: 1,
+      sourceDatabasePath: ".data/source-datasets.sqlite",
+      sqlValidator: {
+        validate: () => ({
+          errors: [],
+          isValid: true,
+        }),
+      },
+    });
+
+    scheduler.schedule("dataset_1");
+    scheduler.schedule("dataset_1");
+    scheduler.schedule("dataset_1");
+    await scheduler.drain();
+
+    expect(maxConcurrentRuns).toBe(1);
+  });
 });
 
 function seedRepository(): IngestionRepository {

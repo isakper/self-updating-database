@@ -29,6 +29,22 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<{
   const apiBaseUrl =
     options.apiBaseUrl ?? process.env.API_BASE_URL ?? "http://127.0.0.1:3001";
   const port = options.port ?? Number(process.env.WEB_PORT ?? "3000");
+  const sourceDatabasePathHint =
+    process.env.SOURCE_DATABASE_PATH ?? ".data/source-datasets.sqlite";
+  const renderPage = (
+    pageOptions?: Parameters<typeof renderUploadWorkspacePage>[0]
+  ) =>
+    renderUploadWorkspacePage({
+      ...pageOptions,
+      sourceDatabasePathHint,
+    });
+  const renderWorkspace = (
+    pageOptions?: Parameters<typeof renderWorkspaceFragments>[0]
+  ) =>
+    renderWorkspaceFragments({
+      ...pageOptions,
+      sourceDatabasePathHint,
+    });
 
   const server = createServer((request, response) => {
     void (async () => {
@@ -44,7 +60,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<{
         }
 
         if (request.method === "GET" && requestUrl.pathname === "/") {
-          respondHtml(response, renderUploadWorkspacePage());
+          respondHtml(response, renderPage());
           return;
         }
 
@@ -84,7 +100,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<{
             });
             response.end(
               JSON.stringify(
-                renderWorkspaceFragments({
+                renderWorkspace({
                   importSummary: viewState.importSummary,
                   queryLogs: viewState.queryLogs,
                 })
@@ -98,7 +114,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<{
           if (!datasetId) {
             respondHtml(
               response,
-              renderUploadWorkspacePage({
+              renderPage({
                 errorMessage: "Dataset id is required.",
               }),
               400
@@ -124,7 +140,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<{
           if (statusCode < 200 || statusCode >= 300 || !payload.summary) {
             respondHtml(
               response,
-              renderUploadWorkspacePage({
+              renderPage({
                 errorMessage: payload.error ?? "Import status not found.",
               }),
               statusCode
@@ -134,10 +150,24 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<{
 
           respondHtml(
             response,
-            renderUploadWorkspacePage({
+            renderPage({
               activeTab: parseRequestedTab(requestUrl.searchParams.get("tab")),
               importSummary: payload.summary,
               queryLogs: queryLogsPayload.payload.queryLogs ?? [],
+              ...(requestUrl.searchParams.get("operatorError")
+                ? {
+                    operatorErrorMessage: requestUrl.searchParams.get(
+                      "operatorError"
+                    ) as string,
+                  }
+                : {}),
+              ...(requestUrl.searchParams.get("operatorMessage")
+                ? {
+                    operatorMessage: requestUrl.searchParams.get(
+                      "operatorMessage"
+                    ) as string,
+                  }
+                : {}),
             })
           );
           return;
@@ -188,7 +218,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<{
             if (statusCode < 200 || statusCode >= 300 || !payload.summary) {
               respondHtml(
                 response,
-                renderUploadWorkspacePage({
+                renderPage({
                   errorMessage: payload.error ?? "Import failed.",
                 }),
                 statusCode
@@ -204,7 +234,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<{
           } catch (error) {
             respondHtml(
               response,
-              renderUploadWorkspacePage({
+              renderPage({
                 errorMessage:
                   error instanceof Error ? error.message : "Import failed.",
               }),
@@ -217,6 +247,111 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<{
         if (
           request.method === "POST" &&
           requestUrl.pathname.startsWith("/imports/") &&
+          requestUrl.pathname.endsWith("/pipeline/rerun")
+        ) {
+          const datasetId = requestUrl.pathname.split("/").at(-2);
+
+          if (!datasetId) {
+            respondHtml(
+              response,
+              renderPage({
+                activeTab: "logs",
+                errorMessage: "Dataset id is required.",
+              }),
+              400
+            );
+            return;
+          }
+
+          const operatorResult = await runOperatorAction({
+            actionLabel: "Pipeline rerun",
+            apiBaseUrl,
+            endpointPath: `/api/imports/${datasetId}/pipeline-rerun`,
+          });
+
+          response.writeHead(303, {
+            location: buildOperatorRedirectLocation({
+              datasetId,
+              ...operatorResult,
+            }),
+          });
+          response.end();
+          return;
+        }
+
+        if (
+          request.method === "POST" &&
+          requestUrl.pathname.startsWith("/imports/") &&
+          requestUrl.pathname.endsWith("/optimization/run")
+        ) {
+          const datasetId = requestUrl.pathname.split("/").at(-2);
+
+          if (!datasetId) {
+            respondHtml(
+              response,
+              renderPage({
+                activeTab: "logs",
+                errorMessage: "Dataset id is required.",
+              }),
+              400
+            );
+            return;
+          }
+
+          const operatorResult = await runOperatorAction({
+            actionLabel: "Optimization run",
+            apiBaseUrl,
+            endpointPath: `/api/optimization-runs/${datasetId}`,
+          });
+
+          response.writeHead(303, {
+            location: buildOperatorRedirectLocation({
+              datasetId,
+              ...operatorResult,
+            }),
+          });
+          response.end();
+          return;
+        }
+
+        if (
+          request.method === "POST" &&
+          requestUrl.pathname.startsWith("/imports/") &&
+          requestUrl.pathname.endsWith("/optimization/retry-failed")
+        ) {
+          const datasetId = requestUrl.pathname.split("/").at(-2);
+
+          if (!datasetId) {
+            respondHtml(
+              response,
+              renderPage({
+                activeTab: "logs",
+                errorMessage: "Dataset id is required.",
+              }),
+              400
+            );
+            return;
+          }
+
+          const operatorResult = await runOperatorAction({
+            actionLabel: "Optimization retry",
+            apiBaseUrl,
+            endpointPath: `/api/optimization-retries/${datasetId}`,
+          });
+
+          response.writeHead(303, {
+            location: buildOperatorRedirectLocation({
+              datasetId,
+              ...operatorResult,
+            }),
+          });
+          response.end();
+          return;
+        }
+
+        if (
+          request.method === "POST" &&
+          requestUrl.pathname.startsWith("/imports/") &&
           requestUrl.pathname.endsWith("/query-logs/import")
         ) {
           const datasetId = requestUrl.pathname.split("/").at(-2);
@@ -224,7 +359,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<{
           if (!datasetId) {
             respondHtml(
               response,
-              renderUploadWorkspacePage({
+              renderPage({
                 activeTab: "logs",
                 errorMessage: "Dataset id is required.",
               }),
@@ -253,7 +388,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<{
 
             respondHtml(
               response,
-              renderUploadWorkspacePage({
+              renderPage({
                 activeTab: "logs",
                 ...(viewState.importSummary
                   ? { importSummary: viewState.importSummary }
@@ -326,7 +461,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<{
               validate: isQueryLogsResponse,
               url: `${apiBaseUrl}/api/query-logs/${datasetId}`,
             });
-            const fragments = renderWorkspaceFragments({
+            const fragments = renderWorkspace({
               importSummary: importViewState.importSummary,
               ...(statusCode < 200 || statusCode >= 300 || !payload.queryResult
                 ? { queryErrorMessage: payload.error ?? "Query failed." }
@@ -352,7 +487,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<{
             );
             return;
           } catch (error) {
-            const fragments = renderWorkspaceFragments({
+            const fragments = renderWorkspace({
               importSummary: importViewState.importSummary,
               queryErrorMessage:
                 error instanceof Error ? error.message : "Query failed.",
@@ -383,7 +518,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<{
           if (!datasetId) {
             respondHtml(
               response,
-              renderUploadWorkspacePage({
+              renderPage({
                 errorMessage: "Dataset id is required.",
               }),
               400
@@ -408,7 +543,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<{
           ) {
             respondHtml(
               response,
-              renderUploadWorkspacePage({
+              renderPage({
                 errorMessage: importPayload.error ?? "Import status not found.",
               }),
               importStatusCode
@@ -439,7 +574,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<{
             if (statusCode < 200 || statusCode >= 300 || !payload.queryResult) {
               respondHtml(
                 response,
-                renderUploadWorkspacePage(
+                renderPage(
                   payload.generatedSqlRecord && payload.queryLog
                     ? {
                         importSummary: importPayload.summary,
@@ -466,7 +601,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<{
 
             respondHtml(
               response,
-              renderUploadWorkspacePage({
+              renderPage({
                 importSummary: importPayload.summary,
                 queryLogs: [payload.queryResult.queryLog],
                 queryPrompt: prompt,
@@ -477,7 +612,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<{
           } catch (error) {
             respondHtml(
               response,
-              renderUploadWorkspacePage({
+              renderPage({
                 importSummary: importPayload.summary,
                 queryLogs: [],
                 queryErrorMessage:
@@ -557,6 +692,54 @@ async function importQueryLogs(options: {
   return {
     importedCount: payload.importedCount,
   };
+}
+
+async function runOperatorAction(options: {
+  actionLabel: string;
+  apiBaseUrl: string;
+  endpointPath: string;
+}): Promise<{ accepted: boolean; message: string }> {
+  const { payload, statusCode } = await requestJsonFromApi<{
+    accepted?: boolean;
+    error?: string;
+    message?: string;
+  }>({
+    method: "POST",
+    url: `${options.apiBaseUrl}${options.endpointPath}`,
+    validate: isOperatorActionResponse,
+  });
+
+  if (statusCode >= 200 && statusCode < 300 && payload.accepted) {
+    return {
+      accepted: true,
+      message: payload.message ?? `${options.actionLabel} accepted.`,
+    };
+  }
+
+  return {
+    accepted: false,
+    message:
+      payload.error ??
+      payload.message ??
+      `${options.actionLabel} could not be scheduled.`,
+  };
+}
+
+function buildOperatorRedirectLocation(options: {
+  accepted: boolean;
+  datasetId: string;
+  message: string;
+}): string {
+  const redirectUrl = new URL(
+    `/imports/${options.datasetId}`,
+    "http://localhost"
+  );
+  redirectUrl.searchParams.set("tab", "logs");
+  redirectUrl.searchParams.set(
+    options.accepted ? "operatorMessage" : "operatorError",
+    options.message
+  );
+  return `${redirectUrl.pathname}${redirectUrl.search}`;
 }
 
 async function fetchViewState(
@@ -783,6 +966,30 @@ function isQueryLogImportResponse(
   return true;
 }
 
+function isOperatorActionResponse(
+  value: unknown
+): value is { accepted?: boolean; error?: string; message?: string } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+
+  if ("accepted" in candidate && typeof candidate.accepted !== "boolean") {
+    return false;
+  }
+
+  if ("error" in candidate && typeof candidate.error !== "string") {
+    return false;
+  }
+
+  if ("message" in candidate && typeof candidate.message !== "string") {
+    return false;
+  }
+
+  return true;
+}
+
 async function readFormField(
   request: IncomingMessage,
   fieldName: string
@@ -814,8 +1021,10 @@ function respondHtml(
   response.end(html);
 }
 
-function parseRequestedTab(value: string | null): "logs" | "query" | "upload" {
-  if (value === "query" || value === "logs") {
+function parseRequestedTab(
+  value: string | null
+): "demo" | "logs" | "query" | "upload" {
+  if (value === "query" || value === "logs" || value === "demo") {
     return value;
   }
 

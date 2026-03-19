@@ -407,6 +407,8 @@ function createQueryExecutionLog(options: {
     queryKind: null,
     queryLogId: options.queryLogId,
     resultColumnNames: options.result?.columnNames ?? [],
+    resultRowsSample:
+      options.result?.rows.slice(0, 25).map((row) => [...row]) ?? null,
     rowCount: options.result?.rows.length ?? null,
     sourceDatasetId: options.sourceDatasetId,
     status: options.status,

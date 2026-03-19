@@ -17,6 +17,10 @@ export interface IngestionApi {
   getImportSummary(datasetId: string): WorkbookImportSummary | undefined;
   getSourceDataset(datasetId: string): SourceDataset | undefined;
   listImports(): WorkbookImportSummary[];
+  rerunPipeline(datasetId: string): {
+    accepted: boolean;
+    message: string;
+  };
 }
 
 export interface CreateIngestionApiOptions {
@@ -62,6 +66,29 @@ export function createIngestionApi(
         const summary = getImportSummaryFromRepository(repository, dataset.id);
         return summary ? [summary] : [];
       });
+    },
+    rerunPipeline(datasetId) {
+      const dataset = repository.getById(datasetId);
+
+      if (!dataset) {
+        return {
+          accepted: false,
+          message: `Dataset ${datasetId} was not found.`,
+        };
+      }
+
+      if (!options.pipelineRetryScheduler) {
+        return {
+          accepted: false,
+          message: "Pipeline scheduler is not configured.",
+        };
+      }
+
+      options.pipelineRetryScheduler.schedule(datasetId);
+      return {
+        accepted: true,
+        message: `Pipeline rerun scheduled for ${datasetId}.`,
+      };
     },
   };
 }

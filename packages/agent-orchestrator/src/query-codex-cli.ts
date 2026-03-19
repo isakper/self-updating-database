@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 import {
+  type RequiredArtifact,
   readRequiredArtifact,
   runCodexCommand,
 } from "./codex-command-runner.js";
@@ -61,6 +62,18 @@ export function createCodexCliQueryGenerator(
       await writeFile(promptPath, codexPrompt, "utf8");
 
       try {
+        const requiredArtifacts: RequiredArtifact[] = [
+          { filePath: join(workspacePath, "query.sql") },
+          {
+            filePath: join(workspacePath, "summary.md"),
+            validateContents(contents) {
+              if (contents.trim().length === 0) {
+                throw new Error("summary.md must be non-empty markdown text.");
+              }
+            },
+          },
+        ];
+
         await runCodexCommand(
           codexCommand,
           [
@@ -81,7 +94,7 @@ export function createCodexCliQueryGenerator(
           ],
           codexPrompt,
           workspacePath,
-          [join(workspacePath, "query.sql"), join(workspacePath, "summary.md")],
+          requiredArtifacts,
           {
             artifactPollIntervalMs,
             commandTimeoutMs,
