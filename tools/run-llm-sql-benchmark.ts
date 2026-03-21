@@ -48,6 +48,7 @@ interface BenchmarkResultRow {
 
 interface ScriptOptions {
   datasetId: string;
+  evaluationConcurrency: number;
   evaluationModel: string;
   inferenceModel: string;
   outputCsvPath: string;
@@ -102,6 +103,10 @@ const DEFAULT_INFERENCE_MODEL =
   process.env.OPENAI_QUERY_MODEL ??
   "gpt-5.4";
 const DEFAULT_EVALUATION_MODEL = process.env.OPENAI_QUERY_MODEL ?? "gpt-5.4";
+const DEFAULT_EVALUATION_CONCURRENCY = parsePositiveInteger(
+  process.env.EVALUATION_CONCURRENCY,
+  16
+);
 const DEFAULT_SOURCE_DATABASE_PATH =
   process.env.SOURCE_DATABASE_PATH ?? ".data/source-datasets.sqlite";
 
@@ -261,6 +266,7 @@ try {
             const rowEvaluationRun = await evaluateRowsWithLlm({
               actualRows,
               apiKey: process.env.OPENAI_API_KEY,
+              evaluationConcurrency: options.evaluationConcurrency,
               evaluationModel: options.evaluationModel,
               expectedRows,
               question: question.question,
@@ -428,6 +434,10 @@ function parseOptions(args: string[]): ScriptOptions {
 
   return {
     datasetId,
+    evaluationConcurrency: parsePositiveInteger(
+      firstOption(options, "evaluation-concurrency"),
+      DEFAULT_EVALUATION_CONCURRENCY
+    ),
     evaluationModel:
       firstOption(options, "evaluation-model") ?? DEFAULT_EVALUATION_MODEL,
     inferenceModel:
@@ -453,6 +463,22 @@ function firstOption(
   }
 
   return values[0] ?? null;
+}
+
+function parsePositiveInteger(
+  candidate: string | null | undefined,
+  fallback: number
+): number {
+  if (!candidate) {
+    return fallback;
+  }
+
+  const parsed = Number.parseInt(candidate, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return parsed;
 }
 
 function openDatabase(SQLModule: SqlJsStatic, path: string): Database {
@@ -831,42 +857,75 @@ function stripMarkdownSqlFences(text: string): string {
 async function evaluateRowsWithLlm(options: {
   actualRows: QueryRow[];
   apiKey: string;
+  evaluationConcurrency: number;
   evaluationModel: string;
   expectedRows: QueryRow[];
   question: string;
   scenarioName: string;
 }): Promise<LlmRowEvaluationRun> {
-  const evaluations: LlmRowEvaluationResponse[] = [];
-  const prompts: string[] = [];
+  const rowRuns = await mapWithConcurrency(
+    options.expectedRows,
+    options.evaluationConcurrency,
+    async (expectedRow, index) => {
+      const prompt = buildRowEvaluationPrompt({
+        actualRows: options.actualRows,
+        expectedRow,
+        question: options.question,
+        rowIndex: index,
+        scenarioName: options.scenarioName,
+      });
 
-  for (let index = 0; index < options.expectedRows.length; index += 1) {
-    const expectedRow = options.expectedRows[index];
-    if (!expectedRow) {
-      continue;
+      const responseText = await callOpenAiText({
+        apiKey: options.apiKey,
+        model: options.evaluationModel,
+        prompt,
+      });
+
+      return {
+        evaluation: parseRowEvaluationResponse(responseText),
+        prompt,
+      };
     }
-    const prompt = buildRowEvaluationPrompt({
-      actualRows: options.actualRows,
-      expectedRow,
-      question: options.question,
-      rowIndex: index,
-      scenarioName: options.scenarioName,
-    });
-    prompts.push(prompt);
-
-    const responseText = await callOpenAiText({
-      apiKey: options.apiKey,
-      model: options.evaluationModel,
-      prompt,
-    });
-
-    const parsed = parseRowEvaluationResponse(responseText);
-    evaluations.push(parsed);
-  }
+  );
 
   return {
-    evaluations,
-    prompts,
+    evaluations: rowRuns.map((rowRun) => rowRun.evaluation),
+    prompts: rowRuns.map((rowRun) => rowRun.prompt),
   };
+}
+
+async function mapWithConcurrency<TInput, TOutput>(
+  items: TInput[],
+  concurrency: number,
+  mapper: (item: TInput, index: number) => Promise<TOutput>
+): Promise<TOutput[]> {
+  if (items.length === 0) {
+    return [];
+  }
+
+  const workerCount = Math.max(1, Math.min(concurrency, items.length));
+  const results = new Array<TOutput>(items.length);
+  let nextIndex = 0;
+
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (true) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+
+      if (currentIndex >= items.length) {
+        return;
+      }
+
+      const item = items[currentIndex];
+      if (item === undefined) {
+        continue;
+      }
+      results[currentIndex] = await mapper(item, currentIndex);
+    }
+  });
+
+  await Promise.all(workers);
+  return results;
 }
 
 function buildRowEvaluationPrompt(options: {
