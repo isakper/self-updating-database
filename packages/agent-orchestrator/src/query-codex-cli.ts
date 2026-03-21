@@ -168,6 +168,8 @@ SQL contract for query.sql:
   - DETACH
   - PRAGMA
 - use explicit aliases when it improves readability
+- for gross revenue or gross sales questions, treat gross as pre-return sales and exclude returned rows when a return flag exists
+- for net revenue or net sales questions, include return impact instead of excluding returned rows
 - prefer a LIMIT 200 for detail-row queries unless the user clearly asks for all rows
 
 summary.md contract:

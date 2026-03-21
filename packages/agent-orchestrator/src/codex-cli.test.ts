@@ -66,6 +66,9 @@ describe("buildCodexPipelinePrompt", () => {
     expect(prompt).toContain("samples/source_sheet_sheet_1.json");
     expect(prompt).toContain("Write pipeline.sql");
     expect(prompt).toContain("analysis.json contract");
+    expect(prompt).toContain("preserve numeric precision");
+    expect(prompt).toContain("preserve return semantics");
+    expect(prompt).toContain("gross and net metrics logically separate");
     expect(prompt).toContain(
       'The runtime will ATTACH the source database as schema "source"'
     );

@@ -33,6 +33,12 @@ These are the current workspace-level commands and should stay stable as the app
 
 As app runtimes land, document the exact workspace commands and environment variables here.
 
+Current entrypoints:
+
+- API: `pnpm dev:api`
+- Web app: `pnpm dev:web`
+- CLI: `pnpm cli help`
+
 Expected local requirements:
 
 - Per-worktree port configuration
@@ -48,6 +54,7 @@ Expected local requirements:
 - Verify a query execution log is stored with latency and cost-oriented metadata.
 - Verify the UI validation loop was completed for upload or query-facing changes.
 - Verify observability signals exist for one query and one background job.
+- Verify the CLI core flow succeeds (workbook upload, query-log upload, pipeline trigger, optimization trigger).
 
 ## Optional single entrypoint
 

@@ -1,0 +1,243 @@
+[
+  {
+    "id": "q001",
+    "question": "How many transaction lines are in this retail dataset?",
+    "sql": "SELECT COUNT(*) AS transaction_line_count FROM transactions;",
+    "expectedResult": [
+      {
+        "transaction_line_count": 27675
+      }
+    ]
+  },
+  {
+    "id": "q002",
+    "question": "What is the total gross sales amount before returns (incl. VAT; exclude returned items) for the full Q1 2025 period?",
+    "sql": "SELECT ROUND(SUM(grossSalesInclVat), 2) AS total_gross_sales_incl_vat FROM transactions WHERE businessDate >= '2025-01-01' AND businessDate <= '2025-03-31' AND returnFlag = 'No';",
+    "expectedResult": [
+      {
+        "total_gross_sales_incl_vat": 167509.99
+      }
+    ]
+  },
+  {
+    "id": "q003",
+    "question": "Which business day had the highest gross revenue before returns (incl. VAT; exclude returned items), and what was that amount?",
+    "sql": "SELECT businessDate, ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat FROM transactions WHERE returnFlag = 'No' GROUP BY businessDate ORDER BY revenue_incl_vat DESC LIMIT 1;",
+    "expectedResult": [
+      {
+        "businessDate": "2025-02-06",
+        "revenue_incl_vat": 2247.45
+      }
+    ]
+  },
+  {
+    "id": "q004",
+    "question": "What payment method appears most often in the transactions?",
+    "sql": "SELECT paymentMethod, COUNT(DISTINCT transactionId) AS transaction_count\nFROM transactions\nGROUP BY paymentMethod\nORDER BY transaction_count DESC\nLIMIT 1;",
+    "expectedResult": [
+      {
+        "paymentMethod": "Mobile Wallet",
+        "transaction_count": 2234
+      }
+    ]
+  },
+  {
+    "id": "q005",
+    "question": "Can you show me the top 3 stores by total gross revenue before returns (incl. VAT; exclude returned items)?",
+    "sql": "SELECT t.storeId, s.storeName, ROUND(SUM(t.grossSalesInclVat), 2) AS revenue_incl_vat FROM transactions t JOIN stores s ON s.storeId = t.storeId WHERE t.returnFlag = 'No' GROUP BY t.storeId, s.storeName ORDER BY revenue_incl_vat DESC LIMIT 3;",
+    "expectedResult": [
+      {
+        "storeId": "ST001",
+        "storeName": "North Harbor Hyper",
+        "revenue_incl_vat": 15352.52
+      },
+      {
+        "storeId": "ST002",
+        "storeName": "Rainier Express",
+        "revenue_incl_vat": 14334.34
+      },
+      {
+        "storeId": "ST007",
+        "storeName": "Canyon Plaza Hyper",
+        "revenue_incl_vat": 14329.05
+      }
+    ]
+  },
+  {
+    "id": "q006",
+    "question": "Which store brought in the least total gross revenue before returns (incl. VAT; exclude returned items)?",
+    "sql": "SELECT t.storeId, s.storeName, ROUND(SUM(t.grossSalesInclVat), 2) AS revenue_incl_vat FROM transactions t JOIN stores s ON s.storeId = t.storeId WHERE t.returnFlag = 'No' GROUP BY t.storeId, s.storeName ORDER BY revenue_incl_vat ASC LIMIT 1;",
+    "expectedResult": [
+      {
+        "storeId": "ST008",
+        "storeName": "Magnolia Fresh",
+        "revenue_incl_vat": 12975.95
+      }
+    ]
+  },
+  {
+    "id": "q007",
+    "question": "What share of all transaction lines are returns?",
+    "sql": "SELECT ROUND(100.0 * SUM(CASE WHEN returnFlag = 'Yes' THEN 1 ELSE 0 END) / COUNT(*), 2) AS return_line_pct FROM transactions;",
+    "expectedResult": [
+      {
+        "return_line_pct": 1.2
+      }
+    ]
+  },
+  {
+    "id": "q008",
+    "question": "How much discount value was given in total (incl. VAT)?",
+    "sql": "SELECT ROUND(SUM(lineDiscountInclVat), 2) AS total_discount_incl_vat FROM transactions;",
+    "expectedResult": [
+      {
+        "total_discount_incl_vat": 3591.18
+      }
+    ]
+  },
+  {
+    "id": "q009",
+    "question": "Which department made the most gross revenue before returns (incl. VAT; exclude returned items)?",
+    "sql": "SELECT department, ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat FROM transactions WHERE returnFlag = 'No' GROUP BY department ORDER BY revenue_incl_vat DESC LIMIT 1;",
+    "expectedResult": [
+      {
+        "department": "Beverage",
+        "revenue_incl_vat": 52419.33
+      }
+    ]
+  },
+  {
+    "id": "q010",
+    "question": "What are the top 3 product categories by gross revenue before returns (incl. VAT; exclude returned items)?",
+    "sql": "SELECT category, ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat FROM transactions WHERE returnFlag = 'No' GROUP BY category ORDER BY revenue_incl_vat DESC LIMIT 3;",
+    "expectedResult": [
+      {
+        "category": "Alcohol",
+        "revenue_incl_vat": 52419.33
+      },
+      {
+        "category": "Cleaning",
+        "revenue_incl_vat": 24411.05
+      },
+      {
+        "category": "Personal Care",
+        "revenue_incl_vat": 17876.17
+      }
+    ]
+  },
+  {
+    "id": "q011",
+    "question": "Which brand has the highest total gross revenue before returns (incl. VAT; exclude returned items)?",
+    "sql": "SELECT brand, ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat FROM transactions WHERE returnFlag = 'No' GROUP BY brand ORDER BY revenue_incl_vat DESC LIMIT 1;",
+    "expectedResult": [
+      {
+        "brand": "Casa Verde",
+        "revenue_incl_vat": 16431.54
+      }
+    ]
+  },
+  {
+    "id": "q012",
+    "question": "How much gross revenue before returns (incl. VAT; exclude returned items) comes from age-restricted items?",
+    "sql": "SELECT ROUND(SUM(t.grossSalesInclVat), 2) AS age_restricted_revenue_incl_vat FROM transactions t JOIN items i ON i.itemSku = t.itemSku WHERE i.isAgeRestricted = 'Yes' AND t.returnFlag = 'No';",
+    "expectedResult": [
+      {
+        "age_restricted_revenue_incl_vat": 52419.33
+      }
+    ]
+  },
+  {
+    "id": "q013",
+    "question": "What percent of total gross revenue before returns (incl. VAT; exclude returned items) is from private-label items?",
+    "sql": "SELECT ROUND(100.0 * SUM(CASE WHEN i.isPrivateLabel = 'Yes' THEN t.grossSalesInclVat ELSE 0 END) / SUM(t.grossSalesInclVat), 2) AS private_label_revenue_pct FROM transactions t JOIN items i ON i.itemSku = t.itemSku WHERE t.returnFlag = 'No';",
+    "expectedResult": [
+      {
+        "private_label_revenue_pct": 38.7
+      }
+    ]
+  },
+  {
+    "id": "q014",
+    "question": "Which month had the highest gross revenue before returns (incl. VAT; exclude returned items) in Q1 2025?",
+    "sql": "SELECT substr(businessDate, 1, 7) AS month, ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat FROM transactions WHERE businessDate >= '2025-01-01' AND businessDate <= '2025-03-31' AND returnFlag = 'No' GROUP BY month ORDER BY revenue_incl_vat DESC LIMIT 1;",
+    "expectedResult": [
+      {
+        "month": "2025-01",
+        "revenue_incl_vat": 59002.48
+      }
+    ]
+  },
+  {
+    "id": "q015",
+    "question": "What is the average basket value before returns (gross sales incl. VAT; exclude returned items)?",
+    "sql": "WITH basket_totals AS (SELECT basketId, SUM(grossSalesInclVat) AS basket_revenue FROM transactions WHERE returnFlag = 'No' GROUP BY basketId) SELECT ROUND(AVG(basket_revenue), 2) AS avg_basket_revenue_incl_vat FROM basket_totals;",
+    "expectedResult": [
+      {
+        "avg_basket_revenue_incl_vat": 19.14
+      }
+    ]
+  },
+  {
+    "id": "q016",
+    "question": "How many unique SKUs were sold at least once?",
+    "sql": "SELECT COUNT(*) AS distinct_skus_sold\nFROM (\n  SELECT itemSku\n  FROM transactions\n  GROUP BY itemSku\n  HAVING SUM(units) > 0\n);",
+    "expectedResult": [
+      {
+        "distinct_skus_sold": 180
+      }
+    ]
+  },
+  {
+    "id": "q017",
+    "question": "Which city generated the highest total gross revenue before returns (incl. VAT; exclude returned items)?",
+    "sql": "SELECT s.city, ROUND(SUM(t.grossSalesInclVat), 2) AS revenue_incl_vat FROM transactions t JOIN stores s ON s.storeId = t.storeId WHERE t.returnFlag = 'No' GROUP BY s.city ORDER BY revenue_incl_vat DESC LIMIT 1;",
+    "expectedResult": [
+      {
+        "city": "Seattle",
+        "revenue_incl_vat": 15352.52
+      }
+    ]
+  },
+  {
+    "id": "q018",
+    "question": "Which supplier generated the highest gross revenue before returns (incl. VAT; exclude returned items) through sold items?",
+    "sql": "SELECT i.supplierName, ROUND(SUM(t.grossSalesInclVat), 2) AS revenue_incl_vat FROM transactions t JOIN items i ON i.itemSku = t.itemSku WHERE t.returnFlag = 'No' GROUP BY i.supplierName ORDER BY revenue_incl_vat DESC LIMIT 1;",
+    "expectedResult": [
+      {
+        "supplierName": "Blue Peak Supply",
+        "revenue_incl_vat": 37518.62
+      }
+    ]
+  },
+  {
+    "id": "q019",
+    "question": "What are the gross revenue totals before returns (incl. VAT; exclude returned items) for In-Store, Click & Collect, and Delivery?",
+    "sql": "SELECT channel, ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat FROM transactions WHERE returnFlag = 'No' GROUP BY channel ORDER BY revenue_incl_vat DESC;",
+    "expectedResult": [
+      {
+        "channel": "In-Store",
+        "revenue_incl_vat": 142544.42
+      },
+      {
+        "channel": "Click & Collect",
+        "revenue_incl_vat": 14462.17
+      },
+      {
+        "channel": "Delivery",
+        "revenue_incl_vat": 10503.4
+      }
+    ]
+  },
+  {
+    "id": "q020",
+    "question": "Which SKU had the highest total gross revenue before returns (incl. VAT; exclude returned items), and how much did it make?",
+    "sql": "SELECT itemSku, itemDescription, ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat FROM transactions WHERE returnFlag = 'No' GROUP BY itemSku, itemDescription ORDER BY revenue_incl_vat DESC LIMIT 1;",
+    "expectedResult": [
+      {
+        "itemSku": "SKU-00171",
+        "itemDescription": "North Barrel Cider 2 pack",
+        "revenue_incl_vat": 3620.84
+      }
+    ]
+  }
+]

@@ -171,6 +171,9 @@ Rules:
 - Do not use markdown fences.
 - Do not explain the answer.
 - Do not invent tables or columns.
+- For gross revenue or gross sales questions, treat gross as pre-return sales and exclude returned rows when a return flag exists.
+- For net revenue or net sales questions, include return impact instead of excluding returned rows.
+- If a return-flag column exists, use schema-appropriate values (for example, is_return = 0/1 or returnFlag = 'No'/'Yes') to model returns correctly.
 - Prefer explicit column lists instead of SELECT *.
 - Prefer LIMIT 200 for detail-row queries unless the user clearly asked for all rows.`;
 }

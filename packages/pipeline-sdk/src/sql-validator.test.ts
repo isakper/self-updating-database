@@ -54,4 +54,16 @@ describe("validatePipelineSql", () => {
       "must not create indexes on source"
     );
   });
+
+  it("rejects ROUND(...) to preserve numeric precision", () => {
+    const result = validatePipelineSql(`
+      DROP TABLE IF EXISTS cleaned_orders;
+      CREATE TABLE cleaned_orders AS
+      SELECT ROUND(amount, 2) AS amount_rounded
+      FROM source.source_sheet_sheet_1;
+    `);
+
+    expect(result.isValid).toBe(false);
+    expect(result.errors.join(" ")).toContain("must not use ROUND");
+  });
 });
