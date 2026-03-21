@@ -264,6 +264,11 @@ Your job:
 - do not mutate the source database
 - do not assume you must add only one aggregate table
 - optimize for a clean-database schema that is easy for an LLM to understand and query
+- preserve numeric precision from the base clean database; do not add rounding transforms in revised pipeline SQL
+- preserve return semantics when return indicators exist (for example, returnFlag or is_return)
+- keep gross and net metrics logically separate in optimized objects:
+  - gross-before-returns metrics MUST exclude return rows (for example, SUM(CASE WHEN is_return = 0 THEN metric ELSE 0 END))
+  - net metrics should include return impact using signed values
 - prefer a smaller number of clear, well-named tables and columns over a more fragmented schema
 - do not add new tables or new columns unless they materially simplify repeated queries or make the schema easier for an LLM to use
 - if a proposed helper object adds complexity without clear query simplification, prefer no change

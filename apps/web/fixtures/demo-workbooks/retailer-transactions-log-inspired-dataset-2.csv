@@ -1,0 +1,981 @@
+id,question,sql,expectedResult
+"q001","For SKU-00001, SKU-00007, and SKU-00013 from 2025-01-01 to 2025-01-07, show daily units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.","WITH RECURSIVE date_spine(businessDate) AS (
+  SELECT DATE('2025-01-01')
+  UNION ALL
+  SELECT DATE(businessDate, '+1 day')
+  FROM date_spine
+  WHERE businessDate < DATE('2025-01-07')
+),
+sku_scope(itemSku) AS (
+  VALUES
+    ('SKU-00001'),
+    ('SKU-00007'),
+    ('SKU-00013')
+),
+eligible_sku_day AS (
+  SELECT
+    sku_scope.itemSku,
+    date_spine.businessDate
+  FROM sku_scope
+  JOIN items
+    ON items.itemSku = sku_scope.itemSku
+  CROSS JOIN date_spine
+  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))
+    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))
+),
+daily_sales AS (
+  SELECT
+    itemSku,
+    businessDate,
+    ROUND(SUM(units), 3) AS units_sold,
+    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,
+    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat
+  FROM transactions
+  WHERE businessDate >= DATE('2025-01-01')
+    AND businessDate <= DATE('2025-01-07')
+    AND itemSku IN ('SKU-00001', 'SKU-00007', 'SKU-00013')
+    AND returnFlag = 'No'
+  GROUP BY itemSku, businessDate
+)
+SELECT
+  eligible_sku_day.itemSku,
+  eligible_sku_day.businessDate,
+  COALESCE(daily_sales.units_sold, 0) AS units_sold,
+  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,
+  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat
+FROM eligible_sku_day
+LEFT JOIN daily_sales
+  ON daily_sales.itemSku = eligible_sku_day.itemSku
+ AND daily_sales.businessDate = eligible_sku_day.businessDate
+ORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;","[{""itemSku"":""SKU-00001"",""businessDate"":""2025-01-01"",""units_sold"":3,""revenue_incl_vat"":6.11,""cost_ex_vat"":3.48},{""itemSku"":""SKU-00001"",""businessDate"":""2025-01-02"",""units_sold"":2,""revenue_incl_vat"":3.67,""cost_ex_vat"":2.32},{""itemSku"":""SKU-00001"",""businessDate"":""2025-01-03"",""units_sold"":3,""revenue_incl_vat"":5.65,""cost_ex_vat"":3.48},{""itemSku"":""SKU-00001"",""businessDate"":""2025-01-04"",""units_sold"":4,""revenue_incl_vat"":7.35,""cost_ex_vat"":4.64},{""itemSku"":""SKU-00001"",""businessDate"":""2025-01-05"",""units_sold"":4,""revenue_incl_vat"":7.82,""cost_ex_vat"":4.64},{""itemSku"":""SKU-00001"",""businessDate"":""2025-01-06"",""units_sold"":7,""revenue_incl_vat"":13.99,""cost_ex_vat"":8.12},{""itemSku"":""SKU-00001"",""businessDate"":""2025-01-07"",""units_sold"":2,""revenue_incl_vat"":3.89,""cost_ex_vat"":2.32},{""itemSku"":""SKU-00007"",""businessDate"":""2025-01-01"",""units_sold"":1,""revenue_incl_vat"":2.12,""cost_ex_vat"":1.26},{""itemSku"":""SKU-00007"",""businessDate"":""2025-01-02"",""units_sold"":9,""revenue_incl_vat"":19.29,""cost_ex_vat"":11.34},{""itemSku"":""SKU-00007"",""businessDate"":""2025-01-03"",""units_sold"":4,""revenue_incl_vat"":8.98,""cost_ex_vat"":5.04},{""itemSku"":""SKU-00007"",""businessDate"":""2025-01-04"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00007"",""businessDate"":""2025-01-05"",""units_sold"":1,""revenue_incl_vat"":2.24,""cost_ex_vat"":1.26},{""itemSku"":""SKU-00007"",""businessDate"":""2025-01-06"",""units_sold"":2,""revenue_incl_vat"":4.66,""cost_ex_vat"":2.52},{""itemSku"":""SKU-00007"",""businessDate"":""2025-01-07"",""units_sold"":3,""revenue_incl_vat"":6.49,""cost_ex_vat"":3.78}]"
+"q002","Build a complete daily SKU-by-date series for SKU-00001, SKU-00007, and SKU-00013 from 2025-01-01 to 2025-01-07 with units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.","WITH RECURSIVE date_spine(businessDate) AS (
+  SELECT DATE('2025-01-01')
+  UNION ALL
+  SELECT DATE(businessDate, '+1 day')
+  FROM date_spine
+  WHERE businessDate < DATE('2025-01-07')
+),
+sku_scope(itemSku) AS (
+  VALUES
+    ('SKU-00001'),
+    ('SKU-00007'),
+    ('SKU-00013')
+),
+eligible_sku_day AS (
+  SELECT
+    sku_scope.itemSku,
+    date_spine.businessDate
+  FROM sku_scope
+  JOIN items
+    ON items.itemSku = sku_scope.itemSku
+  CROSS JOIN date_spine
+  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))
+    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))
+),
+daily_sales AS (
+  SELECT
+    itemSku,
+    businessDate,
+    ROUND(SUM(units), 3) AS units_sold,
+    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,
+    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat
+  FROM transactions
+  WHERE businessDate >= DATE('2025-01-01')
+    AND businessDate <= DATE('2025-01-07')
+    AND itemSku IN ('SKU-00001', 'SKU-00007', 'SKU-00013')
+    AND returnFlag = 'No'
+  GROUP BY itemSku, businessDate
+)
+SELECT
+  eligible_sku_day.itemSku,
+  eligible_sku_day.businessDate,
+  COALESCE(daily_sales.units_sold, 0) AS units_sold,
+  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,
+  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat
+FROM eligible_sku_day
+LEFT JOIN daily_sales
+  ON daily_sales.itemSku = eligible_sku_day.itemSku
+ AND daily_sales.businessDate = eligible_sku_day.businessDate
+ORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;","[{""itemSku"":""SKU-00001"",""businessDate"":""2025-01-01"",""units_sold"":3,""revenue_incl_vat"":6.11,""cost_ex_vat"":3.48},{""itemSku"":""SKU-00001"",""businessDate"":""2025-01-02"",""units_sold"":2,""revenue_incl_vat"":3.67,""cost_ex_vat"":2.32},{""itemSku"":""SKU-00001"",""businessDate"":""2025-01-03"",""units_sold"":3,""revenue_incl_vat"":5.65,""cost_ex_vat"":3.48},{""itemSku"":""SKU-00001"",""businessDate"":""2025-01-04"",""units_sold"":4,""revenue_incl_vat"":7.35,""cost_ex_vat"":4.64},{""itemSku"":""SKU-00001"",""businessDate"":""2025-01-05"",""units_sold"":4,""revenue_incl_vat"":7.82,""cost_ex_vat"":4.64},{""itemSku"":""SKU-00001"",""businessDate"":""2025-01-06"",""units_sold"":7,""revenue_incl_vat"":13.99,""cost_ex_vat"":8.12},{""itemSku"":""SKU-00001"",""businessDate"":""2025-01-07"",""units_sold"":2,""revenue_incl_vat"":3.89,""cost_ex_vat"":2.32},{""itemSku"":""SKU-00007"",""businessDate"":""2025-01-01"",""units_sold"":1,""revenue_incl_vat"":2.12,""cost_ex_vat"":1.26},{""itemSku"":""SKU-00007"",""businessDate"":""2025-01-02"",""units_sold"":9,""revenue_incl_vat"":19.29,""cost_ex_vat"":11.34},{""itemSku"":""SKU-00007"",""businessDate"":""2025-01-03"",""units_sold"":4,""revenue_incl_vat"":8.98,""cost_ex_vat"":5.04},{""itemSku"":""SKU-00007"",""businessDate"":""2025-01-04"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00007"",""businessDate"":""2025-01-05"",""units_sold"":1,""revenue_incl_vat"":2.24,""cost_ex_vat"":1.26},{""itemSku"":""SKU-00007"",""businessDate"":""2025-01-06"",""units_sold"":2,""revenue_incl_vat"":4.66,""cost_ex_vat"":2.52},{""itemSku"":""SKU-00007"",""businessDate"":""2025-01-07"",""units_sold"":3,""revenue_incl_vat"":6.49,""cost_ex_vat"":3.78}]"
+"q003","For SKU-00022, SKU-00027, and SKU-00031 from 2025-01-08 to 2025-01-14, show daily units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.","WITH RECURSIVE date_spine(businessDate) AS (
+  SELECT DATE('2025-01-08')
+  UNION ALL
+  SELECT DATE(businessDate, '+1 day')
+  FROM date_spine
+  WHERE businessDate < DATE('2025-01-14')
+),
+sku_scope(itemSku) AS (
+  VALUES
+    ('SKU-00022'),
+    ('SKU-00027'),
+    ('SKU-00031')
+),
+eligible_sku_day AS (
+  SELECT
+    sku_scope.itemSku,
+    date_spine.businessDate
+  FROM sku_scope
+  JOIN items
+    ON items.itemSku = sku_scope.itemSku
+  CROSS JOIN date_spine
+  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))
+    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))
+),
+daily_sales AS (
+  SELECT
+    itemSku,
+    businessDate,
+    ROUND(SUM(units), 3) AS units_sold,
+    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,
+    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat
+  FROM transactions
+  WHERE businessDate >= DATE('2025-01-08')
+    AND businessDate <= DATE('2025-01-14')
+    AND itemSku IN ('SKU-00022', 'SKU-00027', 'SKU-00031')
+    AND returnFlag = 'No'
+  GROUP BY itemSku, businessDate
+)
+SELECT
+  eligible_sku_day.itemSku,
+  eligible_sku_day.businessDate,
+  COALESCE(daily_sales.units_sold, 0) AS units_sold,
+  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,
+  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat
+FROM eligible_sku_day
+LEFT JOIN daily_sales
+  ON daily_sales.itemSku = eligible_sku_day.itemSku
+ AND daily_sales.businessDate = eligible_sku_day.businessDate
+ORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;","[{""itemSku"":""SKU-00022"",""businessDate"":""2025-01-08"",""units_sold"":5,""revenue_incl_vat"":12.96,""cost_ex_vat"":7.7},{""itemSku"":""SKU-00022"",""businessDate"":""2025-01-09"",""units_sold"":4,""revenue_incl_vat"":9.26,""cost_ex_vat"":6.16},{""itemSku"":""SKU-00022"",""businessDate"":""2025-01-10"",""units_sold"":3,""revenue_incl_vat"":7.07,""cost_ex_vat"":4.62},{""itemSku"":""SKU-00022"",""businessDate"":""2025-01-11"",""units_sold"":1,""revenue_incl_vat"":2.33,""cost_ex_vat"":1.54},{""itemSku"":""SKU-00022"",""businessDate"":""2025-01-12"",""units_sold"":5,""revenue_incl_vat"":12.86,""cost_ex_vat"":7.7},{""itemSku"":""SKU-00022"",""businessDate"":""2025-01-13"",""units_sold"":3,""revenue_incl_vat"":8.75,""cost_ex_vat"":4.62},{""itemSku"":""SKU-00022"",""businessDate"":""2025-01-14"",""units_sold"":1,""revenue_incl_vat"":2.63,""cost_ex_vat"":1.54},{""itemSku"":""SKU-00027"",""businessDate"":""2025-01-08"",""units_sold"":7,""revenue_incl_vat"":13.47,""cost_ex_vat"":7.98},{""itemSku"":""SKU-00027"",""businessDate"":""2025-01-09"",""units_sold"":2,""revenue_incl_vat"":3.85,""cost_ex_vat"":2.28},{""itemSku"":""SKU-00027"",""businessDate"":""2025-01-10"",""units_sold"":6,""revenue_incl_vat"":10.6,""cost_ex_vat"":6.84},{""itemSku"":""SKU-00027"",""businessDate"":""2025-01-11"",""units_sold"":3,""revenue_incl_vat"":5.08,""cost_ex_vat"":3.42},{""itemSku"":""SKU-00027"",""businessDate"":""2025-01-12"",""units_sold"":3,""revenue_incl_vat"":5.52,""cost_ex_vat"":3.42},{""itemSku"":""SKU-00027"",""businessDate"":""2025-01-13"",""units_sold"":2,""revenue_incl_vat"":3.99,""cost_ex_vat"":2.28},{""itemSku"":""SKU-00027"",""businessDate"":""2025-01-14"",""units_sold"":4,""revenue_incl_vat"":7.01,""cost_ex_vat"":4.56},{""itemSku"":""SKU-00031"",""businessDate"":""2025-01-08"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00031"",""businessDate"":""2025-01-09"",""units_sold"":3,""revenue_incl_vat"":5.24,""cost_ex_vat"":3.24},{""itemSku"":""SKU-00031"",""businessDate"":""2025-01-10"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00031"",""businessDate"":""2025-01-11"",""units_sold"":2,""revenue_incl_vat"":3.28,""cost_ex_vat"":2.16},{""itemSku"":""SKU-00031"",""businessDate"":""2025-01-12"",""units_sold"":2,""revenue_incl_vat"":3.52,""cost_ex_vat"":2.16},{""itemSku"":""SKU-00031"",""businessDate"":""2025-01-13"",""units_sold"":2,""revenue_incl_vat"":3.64,""cost_ex_vat"":2.16},{""itemSku"":""SKU-00031"",""businessDate"":""2025-01-14"",""units_sold"":4,""revenue_incl_vat"":8.45,""cost_ex_vat"":4.32}]"
+"q004","Build a complete daily SKU-by-date series for SKU-00022, SKU-00027, and SKU-00031 from 2025-01-08 to 2025-01-14 with units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.","WITH RECURSIVE date_spine(businessDate) AS (
+  SELECT DATE('2025-01-08')
+  UNION ALL
+  SELECT DATE(businessDate, '+1 day')
+  FROM date_spine
+  WHERE businessDate < DATE('2025-01-14')
+),
+sku_scope(itemSku) AS (
+  VALUES
+    ('SKU-00022'),
+    ('SKU-00027'),
+    ('SKU-00031')
+),
+eligible_sku_day AS (
+  SELECT
+    sku_scope.itemSku,
+    date_spine.businessDate
+  FROM sku_scope
+  JOIN items
+    ON items.itemSku = sku_scope.itemSku
+  CROSS JOIN date_spine
+  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))
+    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))
+),
+daily_sales AS (
+  SELECT
+    itemSku,
+    businessDate,
+    ROUND(SUM(units), 3) AS units_sold,
+    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,
+    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat
+  FROM transactions
+  WHERE businessDate >= DATE('2025-01-08')
+    AND businessDate <= DATE('2025-01-14')
+    AND itemSku IN ('SKU-00022', 'SKU-00027', 'SKU-00031')
+    AND returnFlag = 'No'
+  GROUP BY itemSku, businessDate
+)
+SELECT
+  eligible_sku_day.itemSku,
+  eligible_sku_day.businessDate,
+  COALESCE(daily_sales.units_sold, 0) AS units_sold,
+  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,
+  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat
+FROM eligible_sku_day
+LEFT JOIN daily_sales
+  ON daily_sales.itemSku = eligible_sku_day.itemSku
+ AND daily_sales.businessDate = eligible_sku_day.businessDate
+ORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;","[{""itemSku"":""SKU-00022"",""businessDate"":""2025-01-08"",""units_sold"":5,""revenue_incl_vat"":12.96,""cost_ex_vat"":7.7},{""itemSku"":""SKU-00022"",""businessDate"":""2025-01-09"",""units_sold"":4,""revenue_incl_vat"":9.26,""cost_ex_vat"":6.16},{""itemSku"":""SKU-00022"",""businessDate"":""2025-01-10"",""units_sold"":3,""revenue_incl_vat"":7.07,""cost_ex_vat"":4.62},{""itemSku"":""SKU-00022"",""businessDate"":""2025-01-11"",""units_sold"":1,""revenue_incl_vat"":2.33,""cost_ex_vat"":1.54},{""itemSku"":""SKU-00022"",""businessDate"":""2025-01-12"",""units_sold"":5,""revenue_incl_vat"":12.86,""cost_ex_vat"":7.7},{""itemSku"":""SKU-00022"",""businessDate"":""2025-01-13"",""units_sold"":3,""revenue_incl_vat"":8.75,""cost_ex_vat"":4.62},{""itemSku"":""SKU-00022"",""businessDate"":""2025-01-14"",""units_sold"":1,""revenue_incl_vat"":2.63,""cost_ex_vat"":1.54},{""itemSku"":""SKU-00027"",""businessDate"":""2025-01-08"",""units_sold"":7,""revenue_incl_vat"":13.47,""cost_ex_vat"":7.98},{""itemSku"":""SKU-00027"",""businessDate"":""2025-01-09"",""units_sold"":2,""revenue_incl_vat"":3.85,""cost_ex_vat"":2.28},{""itemSku"":""SKU-00027"",""businessDate"":""2025-01-10"",""units_sold"":6,""revenue_incl_vat"":10.6,""cost_ex_vat"":6.84},{""itemSku"":""SKU-00027"",""businessDate"":""2025-01-11"",""units_sold"":3,""revenue_incl_vat"":5.08,""cost_ex_vat"":3.42},{""itemSku"":""SKU-00027"",""businessDate"":""2025-01-12"",""units_sold"":3,""revenue_incl_vat"":5.52,""cost_ex_vat"":3.42},{""itemSku"":""SKU-00027"",""businessDate"":""2025-01-13"",""units_sold"":2,""revenue_incl_vat"":3.99,""cost_ex_vat"":2.28},{""itemSku"":""SKU-00027"",""businessDate"":""2025-01-14"",""units_sold"":4,""revenue_incl_vat"":7.01,""cost_ex_vat"":4.56},{""itemSku"":""SKU-00031"",""businessDate"":""2025-01-08"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00031"",""businessDate"":""2025-01-09"",""units_sold"":3,""revenue_incl_vat"":5.24,""cost_ex_vat"":3.24},{""itemSku"":""SKU-00031"",""businessDate"":""2025-01-10"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00031"",""businessDate"":""2025-01-11"",""units_sold"":2,""revenue_incl_vat"":3.28,""cost_ex_vat"":2.16},{""itemSku"":""SKU-00031"",""businessDate"":""2025-01-12"",""units_sold"":2,""revenue_incl_vat"":3.52,""cost_ex_vat"":2.16},{""itemSku"":""SKU-00031"",""businessDate"":""2025-01-13"",""units_sold"":2,""revenue_incl_vat"":3.64,""cost_ex_vat"":2.16},{""itemSku"":""SKU-00031"",""businessDate"":""2025-01-14"",""units_sold"":4,""revenue_incl_vat"":8.45,""cost_ex_vat"":4.32}]"
+"q005","For SKU-00044, SKU-00048, and SKU-00053 from 2025-01-15 to 2025-01-21, show daily units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.","WITH RECURSIVE date_spine(businessDate) AS (
+  SELECT DATE('2025-01-15')
+  UNION ALL
+  SELECT DATE(businessDate, '+1 day')
+  FROM date_spine
+  WHERE businessDate < DATE('2025-01-21')
+),
+sku_scope(itemSku) AS (
+  VALUES
+    ('SKU-00044'),
+    ('SKU-00048'),
+    ('SKU-00053')
+),
+eligible_sku_day AS (
+  SELECT
+    sku_scope.itemSku,
+    date_spine.businessDate
+  FROM sku_scope
+  JOIN items
+    ON items.itemSku = sku_scope.itemSku
+  CROSS JOIN date_spine
+  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))
+    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))
+),
+daily_sales AS (
+  SELECT
+    itemSku,
+    businessDate,
+    ROUND(SUM(units), 3) AS units_sold,
+    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,
+    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat
+  FROM transactions
+  WHERE businessDate >= DATE('2025-01-15')
+    AND businessDate <= DATE('2025-01-21')
+    AND itemSku IN ('SKU-00044', 'SKU-00048', 'SKU-00053')
+    AND returnFlag = 'No'
+  GROUP BY itemSku, businessDate
+)
+SELECT
+  eligible_sku_day.itemSku,
+  eligible_sku_day.businessDate,
+  COALESCE(daily_sales.units_sold, 0) AS units_sold,
+  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,
+  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat
+FROM eligible_sku_day
+LEFT JOIN daily_sales
+  ON daily_sales.itemSku = eligible_sku_day.itemSku
+ AND daily_sales.businessDate = eligible_sku_day.businessDate
+ORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;","[{""itemSku"":""SKU-00044"",""businessDate"":""2025-01-15"",""units_sold"":2.921,""revenue_incl_vat"":8.24,""cost_ex_vat"":6.14},{""itemSku"":""SKU-00044"",""businessDate"":""2025-01-16"",""units_sold"":1.772,""revenue_incl_vat"":5.79,""cost_ex_vat"":3.72},{""itemSku"":""SKU-00044"",""businessDate"":""2025-01-17"",""units_sold"":5.884,""revenue_incl_vat"":18.82,""cost_ex_vat"":12.35},{""itemSku"":""SKU-00044"",""businessDate"":""2025-01-18"",""units_sold"":2.087,""revenue_incl_vat"":6.82,""cost_ex_vat"":4.38},{""itemSku"":""SKU-00044"",""businessDate"":""2025-01-19"",""units_sold"":5.191,""revenue_incl_vat"":16.29,""cost_ex_vat"":10.9},{""itemSku"":""SKU-00044"",""businessDate"":""2025-01-20"",""units_sold"":1.585,""revenue_incl_vat"":4.4,""cost_ex_vat"":3.33},{""itemSku"":""SKU-00044"",""businessDate"":""2025-01-21"",""units_sold"":4.567,""revenue_incl_vat"":13.85,""cost_ex_vat"":9.59}]"
+"q006","Build a complete daily SKU-by-date series for SKU-00044, SKU-00048, and SKU-00053 from 2025-01-15 to 2025-01-21 with units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.","WITH RECURSIVE date_spine(businessDate) AS (
+  SELECT DATE('2025-01-15')
+  UNION ALL
+  SELECT DATE(businessDate, '+1 day')
+  FROM date_spine
+  WHERE businessDate < DATE('2025-01-21')
+),
+sku_scope(itemSku) AS (
+  VALUES
+    ('SKU-00044'),
+    ('SKU-00048'),
+    ('SKU-00053')
+),
+eligible_sku_day AS (
+  SELECT
+    sku_scope.itemSku,
+    date_spine.businessDate
+  FROM sku_scope
+  JOIN items
+    ON items.itemSku = sku_scope.itemSku
+  CROSS JOIN date_spine
+  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))
+    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))
+),
+daily_sales AS (
+  SELECT
+    itemSku,
+    businessDate,
+    ROUND(SUM(units), 3) AS units_sold,
+    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,
+    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat
+  FROM transactions
+  WHERE businessDate >= DATE('2025-01-15')
+    AND businessDate <= DATE('2025-01-21')
+    AND itemSku IN ('SKU-00044', 'SKU-00048', 'SKU-00053')
+    AND returnFlag = 'No'
+  GROUP BY itemSku, businessDate
+)
+SELECT
+  eligible_sku_day.itemSku,
+  eligible_sku_day.businessDate,
+  COALESCE(daily_sales.units_sold, 0) AS units_sold,
+  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,
+  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat
+FROM eligible_sku_day
+LEFT JOIN daily_sales
+  ON daily_sales.itemSku = eligible_sku_day.itemSku
+ AND daily_sales.businessDate = eligible_sku_day.businessDate
+ORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;","[{""itemSku"":""SKU-00044"",""businessDate"":""2025-01-15"",""units_sold"":2.921,""revenue_incl_vat"":8.24,""cost_ex_vat"":6.14},{""itemSku"":""SKU-00044"",""businessDate"":""2025-01-16"",""units_sold"":1.772,""revenue_incl_vat"":5.79,""cost_ex_vat"":3.72},{""itemSku"":""SKU-00044"",""businessDate"":""2025-01-17"",""units_sold"":5.884,""revenue_incl_vat"":18.82,""cost_ex_vat"":12.35},{""itemSku"":""SKU-00044"",""businessDate"":""2025-01-18"",""units_sold"":2.087,""revenue_incl_vat"":6.82,""cost_ex_vat"":4.38},{""itemSku"":""SKU-00044"",""businessDate"":""2025-01-19"",""units_sold"":5.191,""revenue_incl_vat"":16.29,""cost_ex_vat"":10.9},{""itemSku"":""SKU-00044"",""businessDate"":""2025-01-20"",""units_sold"":1.585,""revenue_incl_vat"":4.4,""cost_ex_vat"":3.33},{""itemSku"":""SKU-00044"",""businessDate"":""2025-01-21"",""units_sold"":4.567,""revenue_incl_vat"":13.85,""cost_ex_vat"":9.59}]"
+"q007","For SKU-00061, SKU-00064, and SKU-00069 from 2025-01-22 to 2025-01-31, show daily units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.","WITH RECURSIVE date_spine(businessDate) AS (
+  SELECT DATE('2025-01-22')
+  UNION ALL
+  SELECT DATE(businessDate, '+1 day')
+  FROM date_spine
+  WHERE businessDate < DATE('2025-01-31')
+),
+sku_scope(itemSku) AS (
+  VALUES
+    ('SKU-00061'),
+    ('SKU-00064'),
+    ('SKU-00069')
+),
+eligible_sku_day AS (
+  SELECT
+    sku_scope.itemSku,
+    date_spine.businessDate
+  FROM sku_scope
+  JOIN items
+    ON items.itemSku = sku_scope.itemSku
+  CROSS JOIN date_spine
+  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))
+    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))
+),
+daily_sales AS (
+  SELECT
+    itemSku,
+    businessDate,
+    ROUND(SUM(units), 3) AS units_sold,
+    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,
+    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat
+  FROM transactions
+  WHERE businessDate >= DATE('2025-01-22')
+    AND businessDate <= DATE('2025-01-31')
+    AND itemSku IN ('SKU-00061', 'SKU-00064', 'SKU-00069')
+    AND returnFlag = 'No'
+  GROUP BY itemSku, businessDate
+)
+SELECT
+  eligible_sku_day.itemSku,
+  eligible_sku_day.businessDate,
+  COALESCE(daily_sales.units_sold, 0) AS units_sold,
+  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,
+  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat
+FROM eligible_sku_day
+LEFT JOIN daily_sales
+  ON daily_sales.itemSku = eligible_sku_day.itemSku
+ AND daily_sales.businessDate = eligible_sku_day.businessDate
+ORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;","[{""itemSku"":""SKU-00061"",""businessDate"":""2025-01-22"",""units_sold"":1,""revenue_incl_vat"":3.21,""cost_ex_vat"":2.25},{""itemSku"":""SKU-00061"",""businessDate"":""2025-01-23"",""units_sold"":1,""revenue_incl_vat"":2.97,""cost_ex_vat"":2.25},{""itemSku"":""SKU-00061"",""businessDate"":""2025-01-24"",""units_sold"":1,""revenue_incl_vat"":2.76,""cost_ex_vat"":2.25},{""itemSku"":""SKU-00061"",""businessDate"":""2025-01-25"",""units_sold"":2,""revenue_incl_vat"":6.89,""cost_ex_vat"":4.5},{""itemSku"":""SKU-00061"",""businessDate"":""2025-01-26"",""units_sold"":3,""revenue_incl_vat"":10.29,""cost_ex_vat"":6.75},{""itemSku"":""SKU-00061"",""businessDate"":""2025-01-27"",""units_sold"":3,""revenue_incl_vat"":11.64,""cost_ex_vat"":6.75},{""itemSku"":""SKU-00061"",""businessDate"":""2025-01-28"",""units_sold"":2,""revenue_incl_vat"":6.97,""cost_ex_vat"":4.5},{""itemSku"":""SKU-00061"",""businessDate"":""2025-01-29"",""units_sold"":5,""revenue_incl_vat"":17.04,""cost_ex_vat"":11.25},{""itemSku"":""SKU-00061"",""businessDate"":""2025-01-30"",""units_sold"":6,""revenue_incl_vat"":24.91,""cost_ex_vat"":13.5},{""itemSku"":""SKU-00061"",""businessDate"":""2025-01-31"",""units_sold"":3,""revenue_incl_vat"":10.96,""cost_ex_vat"":6.75},{""itemSku"":""SKU-00064"",""businessDate"":""2025-01-22"",""units_sold"":6,""revenue_incl_vat"":19.26,""cost_ex_vat"":12.3},{""itemSku"":""SKU-00064"",""businessDate"":""2025-01-23"",""units_sold"":2,""revenue_incl_vat"":6.46,""cost_ex_vat"":4.1},{""itemSku"":""SKU-00064"",""businessDate"":""2025-01-24"",""units_sold"":3,""revenue_incl_vat"":9.86,""cost_ex_vat"":6.15},{""itemSku"":""SKU-00064"",""businessDate"":""2025-01-25"",""units_sold"":3,""revenue_incl_vat"":8.84,""cost_ex_vat"":6.15},{""itemSku"":""SKU-00064"",""businessDate"":""2025-01-26"",""units_sold"":2,""revenue_incl_vat"":5.54,""cost_ex_vat"":4.1},{""itemSku"":""SKU-00064"",""businessDate"":""2025-01-27"",""units_sold"":1,""revenue_incl_vat"":3.55,""cost_ex_vat"":2.05},{""itemSku"":""SKU-00064"",""businessDate"":""2025-01-28"",""units_sold"":6,""revenue_incl_vat"":22.51,""cost_ex_vat"":12.3},{""itemSku"":""SKU-00064"",""businessDate"":""2025-01-29"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00064"",""businessDate"":""2025-01-30"",""units_sold"":1,""revenue_incl_vat"":2.68,""cost_ex_vat"":2.05},{""itemSku"":""SKU-00064"",""businessDate"":""2025-01-31"",""units_sold"":1,""revenue_incl_vat"":2.98,""cost_ex_vat"":2.05},{""itemSku"":""SKU-00069"",""businessDate"":""2025-01-22"",""units_sold"":2,""revenue_incl_vat"":5.27,""cost_ex_vat"":3.58},{""itemSku"":""SKU-00069"",""businessDate"":""2025-01-23"",""units_sold"":3,""revenue_incl_vat"":8.2,""cost_ex_vat"":5.37},{""itemSku"":""SKU-00069"",""businessDate"":""2025-01-24"",""units_sold"":1,""revenue_incl_vat"":2.72,""cost_ex_vat"":1.79},{""itemSku"":""SKU-00069"",""businessDate"":""2025-01-25"",""units_sold"":6,""revenue_incl_vat"":15.85,""cost_ex_vat"":10.74},{""itemSku"":""SKU-00069"",""businessDate"":""2025-01-26"",""units_sold"":2,""revenue_incl_vat"":6.44,""cost_ex_vat"":3.58},{""itemSku"":""SKU-00069"",""businessDate"":""2025-01-27"",""units_sold"":5,""revenue_incl_vat"":12.55,""cost_ex_vat"":8.95},{""itemSku"":""SKU-00069"",""businessDate"":""2025-01-28"",""units_sold"":5,""revenue_incl_vat"":15.89,""cost_ex_vat"":8.95},{""itemSku"":""SKU-00069"",""businessDate"":""2025-01-29"",""units_sold"":1,""revenue_incl_vat"":2.78,""cost_ex_vat"":1.79},{""itemSku"":""SKU-00069"",""businessDate"":""2025-01-30"",""units_sold"":1,""revenue_incl_vat"":3.24,""cost_ex_vat"":1.79},{""itemSku"":""SKU-00069"",""businessDate"":""2025-01-31"",""units_sold"":2,""revenue_incl_vat"":5.94,""cost_ex_vat"":3.58}]"
+"q008","Build a complete daily SKU-by-date series for SKU-00061, SKU-00064, and SKU-00069 from 2025-01-22 to 2025-01-31 with units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.","WITH RECURSIVE date_spine(businessDate) AS (
+  SELECT DATE('2025-01-22')
+  UNION ALL
+  SELECT DATE(businessDate, '+1 day')
+  FROM date_spine
+  WHERE businessDate < DATE('2025-01-31')
+),
+sku_scope(itemSku) AS (
+  VALUES
+    ('SKU-00061'),
+    ('SKU-00064'),
+    ('SKU-00069')
+),
+eligible_sku_day AS (
+  SELECT
+    sku_scope.itemSku,
+    date_spine.businessDate
+  FROM sku_scope
+  JOIN items
+    ON items.itemSku = sku_scope.itemSku
+  CROSS JOIN date_spine
+  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))
+    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))
+),
+daily_sales AS (
+  SELECT
+    itemSku,
+    businessDate,
+    ROUND(SUM(units), 3) AS units_sold,
+    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,
+    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat
+  FROM transactions
+  WHERE businessDate >= DATE('2025-01-22')
+    AND businessDate <= DATE('2025-01-31')
+    AND itemSku IN ('SKU-00061', 'SKU-00064', 'SKU-00069')
+    AND returnFlag = 'No'
+  GROUP BY itemSku, businessDate
+)
+SELECT
+  eligible_sku_day.itemSku,
+  eligible_sku_day.businessDate,
+  COALESCE(daily_sales.units_sold, 0) AS units_sold,
+  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,
+  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat
+FROM eligible_sku_day
+LEFT JOIN daily_sales
+  ON daily_sales.itemSku = eligible_sku_day.itemSku
+ AND daily_sales.businessDate = eligible_sku_day.businessDate
+ORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;","[{""itemSku"":""SKU-00061"",""businessDate"":""2025-01-22"",""units_sold"":1,""revenue_incl_vat"":3.21,""cost_ex_vat"":2.25},{""itemSku"":""SKU-00061"",""businessDate"":""2025-01-23"",""units_sold"":1,""revenue_incl_vat"":2.97,""cost_ex_vat"":2.25},{""itemSku"":""SKU-00061"",""businessDate"":""2025-01-24"",""units_sold"":1,""revenue_incl_vat"":2.76,""cost_ex_vat"":2.25},{""itemSku"":""SKU-00061"",""businessDate"":""2025-01-25"",""units_sold"":2,""revenue_incl_vat"":6.89,""cost_ex_vat"":4.5},{""itemSku"":""SKU-00061"",""businessDate"":""2025-01-26"",""units_sold"":3,""revenue_incl_vat"":10.29,""cost_ex_vat"":6.75},{""itemSku"":""SKU-00061"",""businessDate"":""2025-01-27"",""units_sold"":3,""revenue_incl_vat"":11.64,""cost_ex_vat"":6.75},{""itemSku"":""SKU-00061"",""businessDate"":""2025-01-28"",""units_sold"":2,""revenue_incl_vat"":6.97,""cost_ex_vat"":4.5},{""itemSku"":""SKU-00061"",""businessDate"":""2025-01-29"",""units_sold"":5,""revenue_incl_vat"":17.04,""cost_ex_vat"":11.25},{""itemSku"":""SKU-00061"",""businessDate"":""2025-01-30"",""units_sold"":6,""revenue_incl_vat"":24.91,""cost_ex_vat"":13.5},{""itemSku"":""SKU-00061"",""businessDate"":""2025-01-31"",""units_sold"":3,""revenue_incl_vat"":10.96,""cost_ex_vat"":6.75},{""itemSku"":""SKU-00064"",""businessDate"":""2025-01-22"",""units_sold"":6,""revenue_incl_vat"":19.26,""cost_ex_vat"":12.3},{""itemSku"":""SKU-00064"",""businessDate"":""2025-01-23"",""units_sold"":2,""revenue_incl_vat"":6.46,""cost_ex_vat"":4.1},{""itemSku"":""SKU-00064"",""businessDate"":""2025-01-24"",""units_sold"":3,""revenue_incl_vat"":9.86,""cost_ex_vat"":6.15},{""itemSku"":""SKU-00064"",""businessDate"":""2025-01-25"",""units_sold"":3,""revenue_incl_vat"":8.84,""cost_ex_vat"":6.15},{""itemSku"":""SKU-00064"",""businessDate"":""2025-01-26"",""units_sold"":2,""revenue_incl_vat"":5.54,""cost_ex_vat"":4.1},{""itemSku"":""SKU-00064"",""businessDate"":""2025-01-27"",""units_sold"":1,""revenue_incl_vat"":3.55,""cost_ex_vat"":2.05},{""itemSku"":""SKU-00064"",""businessDate"":""2025-01-28"",""units_sold"":6,""revenue_incl_vat"":22.51,""cost_ex_vat"":12.3},{""itemSku"":""SKU-00064"",""businessDate"":""2025-01-29"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00064"",""businessDate"":""2025-01-30"",""units_sold"":1,""revenue_incl_vat"":2.68,""cost_ex_vat"":2.05},{""itemSku"":""SKU-00064"",""businessDate"":""2025-01-31"",""units_sold"":1,""revenue_incl_vat"":2.98,""cost_ex_vat"":2.05},{""itemSku"":""SKU-00069"",""businessDate"":""2025-01-22"",""units_sold"":2,""revenue_incl_vat"":5.27,""cost_ex_vat"":3.58},{""itemSku"":""SKU-00069"",""businessDate"":""2025-01-23"",""units_sold"":3,""revenue_incl_vat"":8.2,""cost_ex_vat"":5.37},{""itemSku"":""SKU-00069"",""businessDate"":""2025-01-24"",""units_sold"":1,""revenue_incl_vat"":2.72,""cost_ex_vat"":1.79},{""itemSku"":""SKU-00069"",""businessDate"":""2025-01-25"",""units_sold"":6,""revenue_incl_vat"":15.85,""cost_ex_vat"":10.74},{""itemSku"":""SKU-00069"",""businessDate"":""2025-01-26"",""units_sold"":2,""revenue_incl_vat"":6.44,""cost_ex_vat"":3.58},{""itemSku"":""SKU-00069"",""businessDate"":""2025-01-27"",""units_sold"":5,""revenue_incl_vat"":12.55,""cost_ex_vat"":8.95},{""itemSku"":""SKU-00069"",""businessDate"":""2025-01-28"",""units_sold"":5,""revenue_incl_vat"":15.89,""cost_ex_vat"":8.95},{""itemSku"":""SKU-00069"",""businessDate"":""2025-01-29"",""units_sold"":1,""revenue_incl_vat"":2.78,""cost_ex_vat"":1.79},{""itemSku"":""SKU-00069"",""businessDate"":""2025-01-30"",""units_sold"":1,""revenue_incl_vat"":3.24,""cost_ex_vat"":1.79},{""itemSku"":""SKU-00069"",""businessDate"":""2025-01-31"",""units_sold"":2,""revenue_incl_vat"":5.94,""cost_ex_vat"":3.58}]"
+"q009","For SKU-00078, SKU-00082, and SKU-00086 from 2025-02-01 to 2025-02-07, show daily units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.","WITH RECURSIVE date_spine(businessDate) AS (
+  SELECT DATE('2025-02-01')
+  UNION ALL
+  SELECT DATE(businessDate, '+1 day')
+  FROM date_spine
+  WHERE businessDate < DATE('2025-02-07')
+),
+sku_scope(itemSku) AS (
+  VALUES
+    ('SKU-00078'),
+    ('SKU-00082'),
+    ('SKU-00086')
+),
+eligible_sku_day AS (
+  SELECT
+    sku_scope.itemSku,
+    date_spine.businessDate
+  FROM sku_scope
+  JOIN items
+    ON items.itemSku = sku_scope.itemSku
+  CROSS JOIN date_spine
+  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))
+    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))
+),
+daily_sales AS (
+  SELECT
+    itemSku,
+    businessDate,
+    ROUND(SUM(units), 3) AS units_sold,
+    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,
+    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat
+  FROM transactions
+  WHERE businessDate >= DATE('2025-02-01')
+    AND businessDate <= DATE('2025-02-07')
+    AND itemSku IN ('SKU-00078', 'SKU-00082', 'SKU-00086')
+    AND returnFlag = 'No'
+  GROUP BY itemSku, businessDate
+)
+SELECT
+  eligible_sku_day.itemSku,
+  eligible_sku_day.businessDate,
+  COALESCE(daily_sales.units_sold, 0) AS units_sold,
+  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,
+  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat
+FROM eligible_sku_day
+LEFT JOIN daily_sales
+  ON daily_sales.itemSku = eligible_sku_day.itemSku
+ AND daily_sales.businessDate = eligible_sku_day.businessDate
+ORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;","[{""itemSku"":""SKU-00082"",""businessDate"":""2025-02-01"",""units_sold"":1,""revenue_incl_vat"":2.86,""cost_ex_vat"":1.91},{""itemSku"":""SKU-00082"",""businessDate"":""2025-02-02"",""units_sold"":1,""revenue_incl_vat"":3.54,""cost_ex_vat"":1.91},{""itemSku"":""SKU-00082"",""businessDate"":""2025-02-03"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00082"",""businessDate"":""2025-02-04"",""units_sold"":1,""revenue_incl_vat"":3.09,""cost_ex_vat"":1.91},{""itemSku"":""SKU-00082"",""businessDate"":""2025-02-05"",""units_sold"":3,""revenue_incl_vat"":10.38,""cost_ex_vat"":5.73},{""itemSku"":""SKU-00082"",""businessDate"":""2025-02-06"",""units_sold"":4,""revenue_incl_vat"":10.95,""cost_ex_vat"":7.64},{""itemSku"":""SKU-00082"",""businessDate"":""2025-02-07"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00086"",""businessDate"":""2025-02-01"",""units_sold"":2,""revenue_incl_vat"":8.38,""cost_ex_vat"":4.5},{""itemSku"":""SKU-00086"",""businessDate"":""2025-02-02"",""units_sold"":1,""revenue_incl_vat"":3.73,""cost_ex_vat"":2.25},{""itemSku"":""SKU-00086"",""businessDate"":""2025-02-03"",""units_sold"":1,""revenue_incl_vat"":3.91,""cost_ex_vat"":2.25},{""itemSku"":""SKU-00086"",""businessDate"":""2025-02-04"",""units_sold"":2,""revenue_incl_vat"":7.73,""cost_ex_vat"":4.5},{""itemSku"":""SKU-00086"",""businessDate"":""2025-02-05"",""units_sold"":4,""revenue_incl_vat"":12.64,""cost_ex_vat"":9},{""itemSku"":""SKU-00086"",""businessDate"":""2025-02-06"",""units_sold"":1,""revenue_incl_vat"":4.01,""cost_ex_vat"":2.25},{""itemSku"":""SKU-00086"",""businessDate"":""2025-02-07"",""units_sold"":2,""revenue_incl_vat"":8.5,""cost_ex_vat"":4.5}]"
+"q010","Build a complete daily SKU-by-date series for SKU-00078, SKU-00082, and SKU-00086 from 2025-02-01 to 2025-02-07 with units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.","WITH RECURSIVE date_spine(businessDate) AS (
+  SELECT DATE('2025-02-01')
+  UNION ALL
+  SELECT DATE(businessDate, '+1 day')
+  FROM date_spine
+  WHERE businessDate < DATE('2025-02-07')
+),
+sku_scope(itemSku) AS (
+  VALUES
+    ('SKU-00078'),
+    ('SKU-00082'),
+    ('SKU-00086')
+),
+eligible_sku_day AS (
+  SELECT
+    sku_scope.itemSku,
+    date_spine.businessDate
+  FROM sku_scope
+  JOIN items
+    ON items.itemSku = sku_scope.itemSku
+  CROSS JOIN date_spine
+  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))
+    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))
+),
+daily_sales AS (
+  SELECT
+    itemSku,
+    businessDate,
+    ROUND(SUM(units), 3) AS units_sold,
+    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,
+    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat
+  FROM transactions
+  WHERE businessDate >= DATE('2025-02-01')
+    AND businessDate <= DATE('2025-02-07')
+    AND itemSku IN ('SKU-00078', 'SKU-00082', 'SKU-00086')
+    AND returnFlag = 'No'
+  GROUP BY itemSku, businessDate
+)
+SELECT
+  eligible_sku_day.itemSku,
+  eligible_sku_day.businessDate,
+  COALESCE(daily_sales.units_sold, 0) AS units_sold,
+  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,
+  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat
+FROM eligible_sku_day
+LEFT JOIN daily_sales
+  ON daily_sales.itemSku = eligible_sku_day.itemSku
+ AND daily_sales.businessDate = eligible_sku_day.businessDate
+ORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;","[{""itemSku"":""SKU-00082"",""businessDate"":""2025-02-01"",""units_sold"":1,""revenue_incl_vat"":2.86,""cost_ex_vat"":1.91},{""itemSku"":""SKU-00082"",""businessDate"":""2025-02-02"",""units_sold"":1,""revenue_incl_vat"":3.54,""cost_ex_vat"":1.91},{""itemSku"":""SKU-00082"",""businessDate"":""2025-02-03"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00082"",""businessDate"":""2025-02-04"",""units_sold"":1,""revenue_incl_vat"":3.09,""cost_ex_vat"":1.91},{""itemSku"":""SKU-00082"",""businessDate"":""2025-02-05"",""units_sold"":3,""revenue_incl_vat"":10.38,""cost_ex_vat"":5.73},{""itemSku"":""SKU-00082"",""businessDate"":""2025-02-06"",""units_sold"":4,""revenue_incl_vat"":10.95,""cost_ex_vat"":7.64},{""itemSku"":""SKU-00082"",""businessDate"":""2025-02-07"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00086"",""businessDate"":""2025-02-01"",""units_sold"":2,""revenue_incl_vat"":8.38,""cost_ex_vat"":4.5},{""itemSku"":""SKU-00086"",""businessDate"":""2025-02-02"",""units_sold"":1,""revenue_incl_vat"":3.73,""cost_ex_vat"":2.25},{""itemSku"":""SKU-00086"",""businessDate"":""2025-02-03"",""units_sold"":1,""revenue_incl_vat"":3.91,""cost_ex_vat"":2.25},{""itemSku"":""SKU-00086"",""businessDate"":""2025-02-04"",""units_sold"":2,""revenue_incl_vat"":7.73,""cost_ex_vat"":4.5},{""itemSku"":""SKU-00086"",""businessDate"":""2025-02-05"",""units_sold"":4,""revenue_incl_vat"":12.64,""cost_ex_vat"":9},{""itemSku"":""SKU-00086"",""businessDate"":""2025-02-06"",""units_sold"":1,""revenue_incl_vat"":4.01,""cost_ex_vat"":2.25},{""itemSku"":""SKU-00086"",""businessDate"":""2025-02-07"",""units_sold"":2,""revenue_incl_vat"":8.5,""cost_ex_vat"":4.5}]"
+"q011","For SKU-00094, SKU-00099, and SKU-00104 from 2025-02-08 to 2025-02-14, show daily units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.","WITH RECURSIVE date_spine(businessDate) AS (
+  SELECT DATE('2025-02-08')
+  UNION ALL
+  SELECT DATE(businessDate, '+1 day')
+  FROM date_spine
+  WHERE businessDate < DATE('2025-02-14')
+),
+sku_scope(itemSku) AS (
+  VALUES
+    ('SKU-00094'),
+    ('SKU-00099'),
+    ('SKU-00104')
+),
+eligible_sku_day AS (
+  SELECT
+    sku_scope.itemSku,
+    date_spine.businessDate
+  FROM sku_scope
+  JOIN items
+    ON items.itemSku = sku_scope.itemSku
+  CROSS JOIN date_spine
+  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))
+    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))
+),
+daily_sales AS (
+  SELECT
+    itemSku,
+    businessDate,
+    ROUND(SUM(units), 3) AS units_sold,
+    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,
+    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat
+  FROM transactions
+  WHERE businessDate >= DATE('2025-02-08')
+    AND businessDate <= DATE('2025-02-14')
+    AND itemSku IN ('SKU-00094', 'SKU-00099', 'SKU-00104')
+    AND returnFlag = 'No'
+  GROUP BY itemSku, businessDate
+)
+SELECT
+  eligible_sku_day.itemSku,
+  eligible_sku_day.businessDate,
+  COALESCE(daily_sales.units_sold, 0) AS units_sold,
+  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,
+  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat
+FROM eligible_sku_day
+LEFT JOIN daily_sales
+  ON daily_sales.itemSku = eligible_sku_day.itemSku
+ AND daily_sales.businessDate = eligible_sku_day.businessDate
+ORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;","[{""itemSku"":""SKU-00094"",""businessDate"":""2025-02-08"",""units_sold"":1,""revenue_incl_vat"":2.57,""cost_ex_vat"":1.74},{""itemSku"":""SKU-00094"",""businessDate"":""2025-02-09"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00094"",""businessDate"":""2025-02-10"",""units_sold"":7,""revenue_incl_vat"":17.32,""cost_ex_vat"":12.18},{""itemSku"":""SKU-00094"",""businessDate"":""2025-02-11"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00094"",""businessDate"":""2025-02-12"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00094"",""businessDate"":""2025-02-13"",""units_sold"":4,""revenue_incl_vat"":11.5,""cost_ex_vat"":6.96},{""itemSku"":""SKU-00094"",""businessDate"":""2025-02-14"",""units_sold"":1,""revenue_incl_vat"":2.16,""cost_ex_vat"":1.74},{""itemSku"":""SKU-00099"",""businessDate"":""2025-02-08"",""units_sold"":1,""revenue_incl_vat"":3.18,""cost_ex_vat"":1.62},{""itemSku"":""SKU-00099"",""businessDate"":""2025-02-09"",""units_sold"":5,""revenue_incl_vat"":11.5,""cost_ex_vat"":8.1},{""itemSku"":""SKU-00099"",""businessDate"":""2025-02-10"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00099"",""businessDate"":""2025-02-11"",""units_sold"":2,""revenue_incl_vat"":4.62,""cost_ex_vat"":3.24},{""itemSku"":""SKU-00099"",""businessDate"":""2025-02-12"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00099"",""businessDate"":""2025-02-13"",""units_sold"":2,""revenue_incl_vat"":4.41,""cost_ex_vat"":3.24},{""itemSku"":""SKU-00099"",""businessDate"":""2025-02-14"",""units_sold"":3,""revenue_incl_vat"":7.43,""cost_ex_vat"":4.86},{""itemSku"":""SKU-00104"",""businessDate"":""2025-02-08"",""units_sold"":1,""revenue_incl_vat"":9.41,""cost_ex_vat"":5.22},{""itemSku"":""SKU-00104"",""businessDate"":""2025-02-09"",""units_sold"":1,""revenue_incl_vat"":8.32,""cost_ex_vat"":5.22},{""itemSku"":""SKU-00104"",""businessDate"":""2025-02-10"",""units_sold"":3,""revenue_incl_vat"":30.05,""cost_ex_vat"":15.66},{""itemSku"":""SKU-00104"",""businessDate"":""2025-02-11"",""units_sold"":3,""revenue_incl_vat"":34.5,""cost_ex_vat"":15.66},{""itemSku"":""SKU-00104"",""businessDate"":""2025-02-12"",""units_sold"":3,""revenue_incl_vat"":29.84,""cost_ex_vat"":15.66},{""itemSku"":""SKU-00104"",""businessDate"":""2025-02-13"",""units_sold"":2,""revenue_incl_vat"":18.03,""cost_ex_vat"":10.44},{""itemSku"":""SKU-00104"",""businessDate"":""2025-02-14"",""units_sold"":2,""revenue_incl_vat"":20.8,""cost_ex_vat"":10.44}]"
+"q012","Build a complete daily SKU-by-date series for SKU-00094, SKU-00099, and SKU-00104 from 2025-02-08 to 2025-02-14 with units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.","WITH RECURSIVE date_spine(businessDate) AS (
+  SELECT DATE('2025-02-08')
+  UNION ALL
+  SELECT DATE(businessDate, '+1 day')
+  FROM date_spine
+  WHERE businessDate < DATE('2025-02-14')
+),
+sku_scope(itemSku) AS (
+  VALUES
+    ('SKU-00094'),
+    ('SKU-00099'),
+    ('SKU-00104')
+),
+eligible_sku_day AS (
+  SELECT
+    sku_scope.itemSku,
+    date_spine.businessDate
+  FROM sku_scope
+  JOIN items
+    ON items.itemSku = sku_scope.itemSku
+  CROSS JOIN date_spine
+  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))
+    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))
+),
+daily_sales AS (
+  SELECT
+    itemSku,
+    businessDate,
+    ROUND(SUM(units), 3) AS units_sold,
+    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,
+    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat
+  FROM transactions
+  WHERE businessDate >= DATE('2025-02-08')
+    AND businessDate <= DATE('2025-02-14')
+    AND itemSku IN ('SKU-00094', 'SKU-00099', 'SKU-00104')
+    AND returnFlag = 'No'
+  GROUP BY itemSku, businessDate
+)
+SELECT
+  eligible_sku_day.itemSku,
+  eligible_sku_day.businessDate,
+  COALESCE(daily_sales.units_sold, 0) AS units_sold,
+  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,
+  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat
+FROM eligible_sku_day
+LEFT JOIN daily_sales
+  ON daily_sales.itemSku = eligible_sku_day.itemSku
+ AND daily_sales.businessDate = eligible_sku_day.businessDate
+ORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;","[{""itemSku"":""SKU-00094"",""businessDate"":""2025-02-08"",""units_sold"":1,""revenue_incl_vat"":2.57,""cost_ex_vat"":1.74},{""itemSku"":""SKU-00094"",""businessDate"":""2025-02-09"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00094"",""businessDate"":""2025-02-10"",""units_sold"":7,""revenue_incl_vat"":17.32,""cost_ex_vat"":12.18},{""itemSku"":""SKU-00094"",""businessDate"":""2025-02-11"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00094"",""businessDate"":""2025-02-12"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00094"",""businessDate"":""2025-02-13"",""units_sold"":4,""revenue_incl_vat"":11.5,""cost_ex_vat"":6.96},{""itemSku"":""SKU-00094"",""businessDate"":""2025-02-14"",""units_sold"":1,""revenue_incl_vat"":2.16,""cost_ex_vat"":1.74},{""itemSku"":""SKU-00099"",""businessDate"":""2025-02-08"",""units_sold"":1,""revenue_incl_vat"":3.18,""cost_ex_vat"":1.62},{""itemSku"":""SKU-00099"",""businessDate"":""2025-02-09"",""units_sold"":5,""revenue_incl_vat"":11.5,""cost_ex_vat"":8.1},{""itemSku"":""SKU-00099"",""businessDate"":""2025-02-10"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00099"",""businessDate"":""2025-02-11"",""units_sold"":2,""revenue_incl_vat"":4.62,""cost_ex_vat"":3.24},{""itemSku"":""SKU-00099"",""businessDate"":""2025-02-12"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00099"",""businessDate"":""2025-02-13"",""units_sold"":2,""revenue_incl_vat"":4.41,""cost_ex_vat"":3.24},{""itemSku"":""SKU-00099"",""businessDate"":""2025-02-14"",""units_sold"":3,""revenue_incl_vat"":7.43,""cost_ex_vat"":4.86},{""itemSku"":""SKU-00104"",""businessDate"":""2025-02-08"",""units_sold"":1,""revenue_incl_vat"":9.41,""cost_ex_vat"":5.22},{""itemSku"":""SKU-00104"",""businessDate"":""2025-02-09"",""units_sold"":1,""revenue_incl_vat"":8.32,""cost_ex_vat"":5.22},{""itemSku"":""SKU-00104"",""businessDate"":""2025-02-10"",""units_sold"":3,""revenue_incl_vat"":30.05,""cost_ex_vat"":15.66},{""itemSku"":""SKU-00104"",""businessDate"":""2025-02-11"",""units_sold"":3,""revenue_incl_vat"":34.5,""cost_ex_vat"":15.66},{""itemSku"":""SKU-00104"",""businessDate"":""2025-02-12"",""units_sold"":3,""revenue_incl_vat"":29.84,""cost_ex_vat"":15.66},{""itemSku"":""SKU-00104"",""businessDate"":""2025-02-13"",""units_sold"":2,""revenue_incl_vat"":18.03,""cost_ex_vat"":10.44},{""itemSku"":""SKU-00104"",""businessDate"":""2025-02-14"",""units_sold"":2,""revenue_incl_vat"":20.8,""cost_ex_vat"":10.44}]"
+"q013","For SKU-00111, SKU-00115, and SKU-00119 from 2025-02-15 to 2025-02-21, show daily units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.","WITH RECURSIVE date_spine(businessDate) AS (
+  SELECT DATE('2025-02-15')
+  UNION ALL
+  SELECT DATE(businessDate, '+1 day')
+  FROM date_spine
+  WHERE businessDate < DATE('2025-02-21')
+),
+sku_scope(itemSku) AS (
+  VALUES
+    ('SKU-00111'),
+    ('SKU-00115'),
+    ('SKU-00119')
+),
+eligible_sku_day AS (
+  SELECT
+    sku_scope.itemSku,
+    date_spine.businessDate
+  FROM sku_scope
+  JOIN items
+    ON items.itemSku = sku_scope.itemSku
+  CROSS JOIN date_spine
+  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))
+    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))
+),
+daily_sales AS (
+  SELECT
+    itemSku,
+    businessDate,
+    ROUND(SUM(units), 3) AS units_sold,
+    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,
+    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat
+  FROM transactions
+  WHERE businessDate >= DATE('2025-02-15')
+    AND businessDate <= DATE('2025-02-21')
+    AND itemSku IN ('SKU-00111', 'SKU-00115', 'SKU-00119')
+    AND returnFlag = 'No'
+  GROUP BY itemSku, businessDate
+)
+SELECT
+  eligible_sku_day.itemSku,
+  eligible_sku_day.businessDate,
+  COALESCE(daily_sales.units_sold, 0) AS units_sold,
+  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,
+  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat
+FROM eligible_sku_day
+LEFT JOIN daily_sales
+  ON daily_sales.itemSku = eligible_sku_day.itemSku
+ AND daily_sales.businessDate = eligible_sku_day.businessDate
+ORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;","[{""itemSku"":""SKU-00111"",""businessDate"":""2025-02-15"",""units_sold"":1,""revenue_incl_vat"":7.3,""cost_ex_vat"":3.65},{""itemSku"":""SKU-00111"",""businessDate"":""2025-02-16"",""units_sold"":2,""revenue_incl_vat"":16.78,""cost_ex_vat"":7.3},{""itemSku"":""SKU-00111"",""businessDate"":""2025-02-17"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00111"",""businessDate"":""2025-02-18"",""units_sold"":3,""revenue_incl_vat"":18.8,""cost_ex_vat"":10.95},{""itemSku"":""SKU-00111"",""businessDate"":""2025-02-19"",""units_sold"":5,""revenue_incl_vat"":32.18,""cost_ex_vat"":18.25},{""itemSku"":""SKU-00111"",""businessDate"":""2025-02-20"",""units_sold"":4,""revenue_incl_vat"":28.19,""cost_ex_vat"":14.6},{""itemSku"":""SKU-00111"",""businessDate"":""2025-02-21"",""units_sold"":1,""revenue_incl_vat"":6.18,""cost_ex_vat"":3.65},{""itemSku"":""SKU-00115"",""businessDate"":""2025-02-15"",""units_sold"":1,""revenue_incl_vat"":10.02,""cost_ex_vat"":4.83},{""itemSku"":""SKU-00115"",""businessDate"":""2025-02-16"",""units_sold"":1,""revenue_incl_vat"":6.47,""cost_ex_vat"":4.83},{""itemSku"":""SKU-00115"",""businessDate"":""2025-02-17"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00115"",""businessDate"":""2025-02-18"",""units_sold"":1,""revenue_incl_vat"":10.53,""cost_ex_vat"":4.83},{""itemSku"":""SKU-00115"",""businessDate"":""2025-02-19"",""units_sold"":3,""revenue_incl_vat"":26.1,""cost_ex_vat"":14.49},{""itemSku"":""SKU-00115"",""businessDate"":""2025-02-20"",""units_sold"":1,""revenue_incl_vat"":8.39,""cost_ex_vat"":4.83},{""itemSku"":""SKU-00115"",""businessDate"":""2025-02-21"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00119"",""businessDate"":""2025-02-15"",""units_sold"":4,""revenue_incl_vat"":31.07,""cost_ex_vat"":16.24},{""itemSku"":""SKU-00119"",""businessDate"":""2025-02-16"",""units_sold"":3,""revenue_incl_vat"":26.03,""cost_ex_vat"":12.18},{""itemSku"":""SKU-00119"",""businessDate"":""2025-02-17"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00119"",""businessDate"":""2025-02-18"",""units_sold"":2,""revenue_incl_vat"":16.17,""cost_ex_vat"":8.12},{""itemSku"":""SKU-00119"",""businessDate"":""2025-02-19"",""units_sold"":1,""revenue_incl_vat"":8.46,""cost_ex_vat"":4.06},{""itemSku"":""SKU-00119"",""businessDate"":""2025-02-20"",""units_sold"":1,""revenue_incl_vat"":8.84,""cost_ex_vat"":4.06},{""itemSku"":""SKU-00119"",""businessDate"":""2025-02-21"",""units_sold"":1,""revenue_incl_vat"":6.28,""cost_ex_vat"":4.06}]"
+"q014","Build a complete daily SKU-by-date series for SKU-00111, SKU-00115, and SKU-00119 from 2025-02-15 to 2025-02-21 with units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.","WITH RECURSIVE date_spine(businessDate) AS (
+  SELECT DATE('2025-02-15')
+  UNION ALL
+  SELECT DATE(businessDate, '+1 day')
+  FROM date_spine
+  WHERE businessDate < DATE('2025-02-21')
+),
+sku_scope(itemSku) AS (
+  VALUES
+    ('SKU-00111'),
+    ('SKU-00115'),
+    ('SKU-00119')
+),
+eligible_sku_day AS (
+  SELECT
+    sku_scope.itemSku,
+    date_spine.businessDate
+  FROM sku_scope
+  JOIN items
+    ON items.itemSku = sku_scope.itemSku
+  CROSS JOIN date_spine
+  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))
+    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))
+),
+daily_sales AS (
+  SELECT
+    itemSku,
+    businessDate,
+    ROUND(SUM(units), 3) AS units_sold,
+    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,
+    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat
+  FROM transactions
+  WHERE businessDate >= DATE('2025-02-15')
+    AND businessDate <= DATE('2025-02-21')
+    AND itemSku IN ('SKU-00111', 'SKU-00115', 'SKU-00119')
+    AND returnFlag = 'No'
+  GROUP BY itemSku, businessDate
+)
+SELECT
+  eligible_sku_day.itemSku,
+  eligible_sku_day.businessDate,
+  COALESCE(daily_sales.units_sold, 0) AS units_sold,
+  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,
+  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat
+FROM eligible_sku_day
+LEFT JOIN daily_sales
+  ON daily_sales.itemSku = eligible_sku_day.itemSku
+ AND daily_sales.businessDate = eligible_sku_day.businessDate
+ORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;","[{""itemSku"":""SKU-00111"",""businessDate"":""2025-02-15"",""units_sold"":1,""revenue_incl_vat"":7.3,""cost_ex_vat"":3.65},{""itemSku"":""SKU-00111"",""businessDate"":""2025-02-16"",""units_sold"":2,""revenue_incl_vat"":16.78,""cost_ex_vat"":7.3},{""itemSku"":""SKU-00111"",""businessDate"":""2025-02-17"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00111"",""businessDate"":""2025-02-18"",""units_sold"":3,""revenue_incl_vat"":18.8,""cost_ex_vat"":10.95},{""itemSku"":""SKU-00111"",""businessDate"":""2025-02-19"",""units_sold"":5,""revenue_incl_vat"":32.18,""cost_ex_vat"":18.25},{""itemSku"":""SKU-00111"",""businessDate"":""2025-02-20"",""units_sold"":4,""revenue_incl_vat"":28.19,""cost_ex_vat"":14.6},{""itemSku"":""SKU-00111"",""businessDate"":""2025-02-21"",""units_sold"":1,""revenue_incl_vat"":6.18,""cost_ex_vat"":3.65},{""itemSku"":""SKU-00115"",""businessDate"":""2025-02-15"",""units_sold"":1,""revenue_incl_vat"":10.02,""cost_ex_vat"":4.83},{""itemSku"":""SKU-00115"",""businessDate"":""2025-02-16"",""units_sold"":1,""revenue_incl_vat"":6.47,""cost_ex_vat"":4.83},{""itemSku"":""SKU-00115"",""businessDate"":""2025-02-17"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00115"",""businessDate"":""2025-02-18"",""units_sold"":1,""revenue_incl_vat"":10.53,""cost_ex_vat"":4.83},{""itemSku"":""SKU-00115"",""businessDate"":""2025-02-19"",""units_sold"":3,""revenue_incl_vat"":26.1,""cost_ex_vat"":14.49},{""itemSku"":""SKU-00115"",""businessDate"":""2025-02-20"",""units_sold"":1,""revenue_incl_vat"":8.39,""cost_ex_vat"":4.83},{""itemSku"":""SKU-00115"",""businessDate"":""2025-02-21"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00119"",""businessDate"":""2025-02-15"",""units_sold"":4,""revenue_incl_vat"":31.07,""cost_ex_vat"":16.24},{""itemSku"":""SKU-00119"",""businessDate"":""2025-02-16"",""units_sold"":3,""revenue_incl_vat"":26.03,""cost_ex_vat"":12.18},{""itemSku"":""SKU-00119"",""businessDate"":""2025-02-17"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00119"",""businessDate"":""2025-02-18"",""units_sold"":2,""revenue_incl_vat"":16.17,""cost_ex_vat"":8.12},{""itemSku"":""SKU-00119"",""businessDate"":""2025-02-19"",""units_sold"":1,""revenue_incl_vat"":8.46,""cost_ex_vat"":4.06},{""itemSku"":""SKU-00119"",""businessDate"":""2025-02-20"",""units_sold"":1,""revenue_incl_vat"":8.84,""cost_ex_vat"":4.06},{""itemSku"":""SKU-00119"",""businessDate"":""2025-02-21"",""units_sold"":1,""revenue_incl_vat"":6.28,""cost_ex_vat"":4.06}]"
+"q015","For SKU-00127, SKU-00132, and SKU-00137 from 2025-02-22 to 2025-02-28, show daily units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.","WITH RECURSIVE date_spine(businessDate) AS (
+  SELECT DATE('2025-02-22')
+  UNION ALL
+  SELECT DATE(businessDate, '+1 day')
+  FROM date_spine
+  WHERE businessDate < DATE('2025-02-28')
+),
+sku_scope(itemSku) AS (
+  VALUES
+    ('SKU-00127'),
+    ('SKU-00132'),
+    ('SKU-00137')
+),
+eligible_sku_day AS (
+  SELECT
+    sku_scope.itemSku,
+    date_spine.businessDate
+  FROM sku_scope
+  JOIN items
+    ON items.itemSku = sku_scope.itemSku
+  CROSS JOIN date_spine
+  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))
+    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))
+),
+daily_sales AS (
+  SELECT
+    itemSku,
+    businessDate,
+    ROUND(SUM(units), 3) AS units_sold,
+    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,
+    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat
+  FROM transactions
+  WHERE businessDate >= DATE('2025-02-22')
+    AND businessDate <= DATE('2025-02-28')
+    AND itemSku IN ('SKU-00127', 'SKU-00132', 'SKU-00137')
+    AND returnFlag = 'No'
+  GROUP BY itemSku, businessDate
+)
+SELECT
+  eligible_sku_day.itemSku,
+  eligible_sku_day.businessDate,
+  COALESCE(daily_sales.units_sold, 0) AS units_sold,
+  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,
+  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat
+FROM eligible_sku_day
+LEFT JOIN daily_sales
+  ON daily_sales.itemSku = eligible_sku_day.itemSku
+ AND daily_sales.businessDate = eligible_sku_day.businessDate
+ORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;","[{""itemSku"":""SKU-00127"",""businessDate"":""2025-02-22"",""units_sold"":2,""revenue_incl_vat"":14.84,""cost_ex_vat"":7.8},{""itemSku"":""SKU-00127"",""businessDate"":""2025-02-23"",""units_sold"":1,""revenue_incl_vat"":8.88,""cost_ex_vat"":3.9},{""itemSku"":""SKU-00127"",""businessDate"":""2025-02-24"",""units_sold"":2,""revenue_incl_vat"":13.98,""cost_ex_vat"":7.8},{""itemSku"":""SKU-00127"",""businessDate"":""2025-02-25"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00127"",""businessDate"":""2025-02-26"",""units_sold"":1,""revenue_incl_vat"":7.99,""cost_ex_vat"":3.9},{""itemSku"":""SKU-00127"",""businessDate"":""2025-02-27"",""units_sold"":3,""revenue_incl_vat"":22.2,""cost_ex_vat"":11.7},{""itemSku"":""SKU-00127"",""businessDate"":""2025-02-28"",""units_sold"":2,""revenue_incl_vat"":15.07,""cost_ex_vat"":7.8},{""itemSku"":""SKU-00132"",""businessDate"":""2025-02-22"",""units_sold"":1,""revenue_incl_vat"":6.31,""cost_ex_vat"":3.31},{""itemSku"":""SKU-00132"",""businessDate"":""2025-02-23"",""units_sold"":2,""revenue_incl_vat"":14.28,""cost_ex_vat"":6.62},{""itemSku"":""SKU-00132"",""businessDate"":""2025-02-24"",""units_sold"":2,""revenue_incl_vat"":11.4,""cost_ex_vat"":6.62},{""itemSku"":""SKU-00132"",""businessDate"":""2025-02-25"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00132"",""businessDate"":""2025-02-26"",""units_sold"":5,""revenue_incl_vat"":32.73,""cost_ex_vat"":16.55},{""itemSku"":""SKU-00132"",""businessDate"":""2025-02-27"",""units_sold"":3,""revenue_incl_vat"":18.53,""cost_ex_vat"":9.93},{""itemSku"":""SKU-00132"",""businessDate"":""2025-02-28"",""units_sold"":3,""revenue_incl_vat"":19.69,""cost_ex_vat"":9.93},{""itemSku"":""SKU-00137"",""businessDate"":""2025-02-22"",""units_sold"":1,""revenue_incl_vat"":8.41,""cost_ex_vat"":3.75},{""itemSku"":""SKU-00137"",""businessDate"":""2025-02-23"",""units_sold"":3,""revenue_incl_vat"":21.44,""cost_ex_vat"":11.25},{""itemSku"":""SKU-00137"",""businessDate"":""2025-02-24"",""units_sold"":4,""revenue_incl_vat"":28.24,""cost_ex_vat"":15},{""itemSku"":""SKU-00137"",""businessDate"":""2025-02-25"",""units_sold"":3,""revenue_incl_vat"":19.43,""cost_ex_vat"":11.25},{""itemSku"":""SKU-00137"",""businessDate"":""2025-02-26"",""units_sold"":3,""revenue_incl_vat"":20.91,""cost_ex_vat"":11.25},{""itemSku"":""SKU-00137"",""businessDate"":""2025-02-27"",""units_sold"":3,""revenue_incl_vat"":24.46,""cost_ex_vat"":11.25},{""itemSku"":""SKU-00137"",""businessDate"":""2025-02-28"",""units_sold"":4,""revenue_incl_vat"":28.16,""cost_ex_vat"":15}]"
+"q016","Build a complete daily SKU-by-date series for SKU-00127, SKU-00132, and SKU-00137 from 2025-02-22 to 2025-02-28 with units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.","WITH RECURSIVE date_spine(businessDate) AS (
+  SELECT DATE('2025-02-22')
+  UNION ALL
+  SELECT DATE(businessDate, '+1 day')
+  FROM date_spine
+  WHERE businessDate < DATE('2025-02-28')
+),
+sku_scope(itemSku) AS (
+  VALUES
+    ('SKU-00127'),
+    ('SKU-00132'),
+    ('SKU-00137')
+),
+eligible_sku_day AS (
+  SELECT
+    sku_scope.itemSku,
+    date_spine.businessDate
+  FROM sku_scope
+  JOIN items
+    ON items.itemSku = sku_scope.itemSku
+  CROSS JOIN date_spine
+  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))
+    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))
+),
+daily_sales AS (
+  SELECT
+    itemSku,
+    businessDate,
+    ROUND(SUM(units), 3) AS units_sold,
+    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,
+    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat
+  FROM transactions
+  WHERE businessDate >= DATE('2025-02-22')
+    AND businessDate <= DATE('2025-02-28')
+    AND itemSku IN ('SKU-00127', 'SKU-00132', 'SKU-00137')
+    AND returnFlag = 'No'
+  GROUP BY itemSku, businessDate
+)
+SELECT
+  eligible_sku_day.itemSku,
+  eligible_sku_day.businessDate,
+  COALESCE(daily_sales.units_sold, 0) AS units_sold,
+  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,
+  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat
+FROM eligible_sku_day
+LEFT JOIN daily_sales
+  ON daily_sales.itemSku = eligible_sku_day.itemSku
+ AND daily_sales.businessDate = eligible_sku_day.businessDate
+ORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;","[{""itemSku"":""SKU-00127"",""businessDate"":""2025-02-22"",""units_sold"":2,""revenue_incl_vat"":14.84,""cost_ex_vat"":7.8},{""itemSku"":""SKU-00127"",""businessDate"":""2025-02-23"",""units_sold"":1,""revenue_incl_vat"":8.88,""cost_ex_vat"":3.9},{""itemSku"":""SKU-00127"",""businessDate"":""2025-02-24"",""units_sold"":2,""revenue_incl_vat"":13.98,""cost_ex_vat"":7.8},{""itemSku"":""SKU-00127"",""businessDate"":""2025-02-25"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00127"",""businessDate"":""2025-02-26"",""units_sold"":1,""revenue_incl_vat"":7.99,""cost_ex_vat"":3.9},{""itemSku"":""SKU-00127"",""businessDate"":""2025-02-27"",""units_sold"":3,""revenue_incl_vat"":22.2,""cost_ex_vat"":11.7},{""itemSku"":""SKU-00127"",""businessDate"":""2025-02-28"",""units_sold"":2,""revenue_incl_vat"":15.07,""cost_ex_vat"":7.8},{""itemSku"":""SKU-00132"",""businessDate"":""2025-02-22"",""units_sold"":1,""revenue_incl_vat"":6.31,""cost_ex_vat"":3.31},{""itemSku"":""SKU-00132"",""businessDate"":""2025-02-23"",""units_sold"":2,""revenue_incl_vat"":14.28,""cost_ex_vat"":6.62},{""itemSku"":""SKU-00132"",""businessDate"":""2025-02-24"",""units_sold"":2,""revenue_incl_vat"":11.4,""cost_ex_vat"":6.62},{""itemSku"":""SKU-00132"",""businessDate"":""2025-02-25"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00132"",""businessDate"":""2025-02-26"",""units_sold"":5,""revenue_incl_vat"":32.73,""cost_ex_vat"":16.55},{""itemSku"":""SKU-00132"",""businessDate"":""2025-02-27"",""units_sold"":3,""revenue_incl_vat"":18.53,""cost_ex_vat"":9.93},{""itemSku"":""SKU-00132"",""businessDate"":""2025-02-28"",""units_sold"":3,""revenue_incl_vat"":19.69,""cost_ex_vat"":9.93},{""itemSku"":""SKU-00137"",""businessDate"":""2025-02-22"",""units_sold"":1,""revenue_incl_vat"":8.41,""cost_ex_vat"":3.75},{""itemSku"":""SKU-00137"",""businessDate"":""2025-02-23"",""units_sold"":3,""revenue_incl_vat"":21.44,""cost_ex_vat"":11.25},{""itemSku"":""SKU-00137"",""businessDate"":""2025-02-24"",""units_sold"":4,""revenue_incl_vat"":28.24,""cost_ex_vat"":15},{""itemSku"":""SKU-00137"",""businessDate"":""2025-02-25"",""units_sold"":3,""revenue_incl_vat"":19.43,""cost_ex_vat"":11.25},{""itemSku"":""SKU-00137"",""businessDate"":""2025-02-26"",""units_sold"":3,""revenue_incl_vat"":20.91,""cost_ex_vat"":11.25},{""itemSku"":""SKU-00137"",""businessDate"":""2025-02-27"",""units_sold"":3,""revenue_incl_vat"":24.46,""cost_ex_vat"":11.25},{""itemSku"":""SKU-00137"",""businessDate"":""2025-02-28"",""units_sold"":4,""revenue_incl_vat"":28.16,""cost_ex_vat"":15}]"
+"q017","For SKU-00146, SKU-00152, and SKU-00158 from 2025-03-01 to 2025-03-15, show daily units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.","WITH RECURSIVE date_spine(businessDate) AS (
+  SELECT DATE('2025-03-01')
+  UNION ALL
+  SELECT DATE(businessDate, '+1 day')
+  FROM date_spine
+  WHERE businessDate < DATE('2025-03-15')
+),
+sku_scope(itemSku) AS (
+  VALUES
+    ('SKU-00146'),
+    ('SKU-00152'),
+    ('SKU-00158')
+),
+eligible_sku_day AS (
+  SELECT
+    sku_scope.itemSku,
+    date_spine.businessDate
+  FROM sku_scope
+  JOIN items
+    ON items.itemSku = sku_scope.itemSku
+  CROSS JOIN date_spine
+  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))
+    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))
+),
+daily_sales AS (
+  SELECT
+    itemSku,
+    businessDate,
+    ROUND(SUM(units), 3) AS units_sold,
+    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,
+    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat
+  FROM transactions
+  WHERE businessDate >= DATE('2025-03-01')
+    AND businessDate <= DATE('2025-03-15')
+    AND itemSku IN ('SKU-00146', 'SKU-00152', 'SKU-00158')
+    AND returnFlag = 'No'
+  GROUP BY itemSku, businessDate
+)
+SELECT
+  eligible_sku_day.itemSku,
+  eligible_sku_day.businessDate,
+  COALESCE(daily_sales.units_sold, 0) AS units_sold,
+  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,
+  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat
+FROM eligible_sku_day
+LEFT JOIN daily_sales
+  ON daily_sales.itemSku = eligible_sku_day.itemSku
+ AND daily_sales.businessDate = eligible_sku_day.businessDate
+ORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;","[{""itemSku"":""SKU-00146"",""businessDate"":""2025-03-01"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00146"",""businessDate"":""2025-03-02"",""units_sold"":1,""revenue_incl_vat"":3.01,""cost_ex_vat"":1.67},{""itemSku"":""SKU-00146"",""businessDate"":""2025-03-03"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00146"",""businessDate"":""2025-03-04"",""units_sold"":5,""revenue_incl_vat"":13.92,""cost_ex_vat"":8.35},{""itemSku"":""SKU-00146"",""businessDate"":""2025-03-05"",""units_sold"":1,""revenue_incl_vat"":3.16,""cost_ex_vat"":1.67},{""itemSku"":""SKU-00146"",""businessDate"":""2025-03-06"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00146"",""businessDate"":""2025-03-07"",""units_sold"":3,""revenue_incl_vat"":8.12,""cost_ex_vat"":5.01},{""itemSku"":""SKU-00146"",""businessDate"":""2025-03-08"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00146"",""businessDate"":""2025-03-09"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00146"",""businessDate"":""2025-03-10"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00146"",""businessDate"":""2025-03-11"",""units_sold"":1,""revenue_incl_vat"":2.77,""cost_ex_vat"":1.67},{""itemSku"":""SKU-00146"",""businessDate"":""2025-03-12"",""units_sold"":4,""revenue_incl_vat"":10.76,""cost_ex_vat"":6.68},{""itemSku"":""SKU-00146"",""businessDate"":""2025-03-13"",""units_sold"":2,""revenue_incl_vat"":4.72,""cost_ex_vat"":3.34},{""itemSku"":""SKU-00146"",""businessDate"":""2025-03-14"",""units_sold"":1,""revenue_incl_vat"":2.63,""cost_ex_vat"":1.67},{""itemSku"":""SKU-00146"",""businessDate"":""2025-03-15"",""units_sold"":1,""revenue_incl_vat"":3.38,""cost_ex_vat"":1.67},{""itemSku"":""SKU-00152"",""businessDate"":""2025-03-01"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00152"",""businessDate"":""2025-03-02"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00152"",""businessDate"":""2025-03-03"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00152"",""businessDate"":""2025-03-04"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00152"",""businessDate"":""2025-03-05"",""units_sold"":1,""revenue_incl_vat"":2.79,""cost_ex_vat"":1.89},{""itemSku"":""SKU-00152"",""businessDate"":""2025-03-06"",""units_sold"":2,""revenue_incl_vat"":6.52,""cost_ex_vat"":3.78},{""itemSku"":""SKU-00152"",""businessDate"":""2025-03-07"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00152"",""businessDate"":""2025-03-08"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00152"",""businessDate"":""2025-03-09"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00152"",""businessDate"":""2025-03-10"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00152"",""businessDate"":""2025-03-11"",""units_sold"":1,""revenue_incl_vat"":2.95,""cost_ex_vat"":1.89},{""itemSku"":""SKU-00152"",""businessDate"":""2025-03-12"",""units_sold"":2,""revenue_incl_vat"":6.77,""cost_ex_vat"":3.78},{""itemSku"":""SKU-00152"",""businessDate"":""2025-03-13"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00152"",""businessDate"":""2025-03-14"",""units_sold"":2,""revenue_incl_vat"":6.44,""cost_ex_vat"":3.78},{""itemSku"":""SKU-00152"",""businessDate"":""2025-03-15"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0}]"
+"q018","Build a complete daily SKU-by-date series for SKU-00146, SKU-00152, and SKU-00158 from 2025-03-01 to 2025-03-15 with units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.","WITH RECURSIVE date_spine(businessDate) AS (
+  SELECT DATE('2025-03-01')
+  UNION ALL
+  SELECT DATE(businessDate, '+1 day')
+  FROM date_spine
+  WHERE businessDate < DATE('2025-03-15')
+),
+sku_scope(itemSku) AS (
+  VALUES
+    ('SKU-00146'),
+    ('SKU-00152'),
+    ('SKU-00158')
+),
+eligible_sku_day AS (
+  SELECT
+    sku_scope.itemSku,
+    date_spine.businessDate
+  FROM sku_scope
+  JOIN items
+    ON items.itemSku = sku_scope.itemSku
+  CROSS JOIN date_spine
+  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))
+    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))
+),
+daily_sales AS (
+  SELECT
+    itemSku,
+    businessDate,
+    ROUND(SUM(units), 3) AS units_sold,
+    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,
+    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat
+  FROM transactions
+  WHERE businessDate >= DATE('2025-03-01')
+    AND businessDate <= DATE('2025-03-15')
+    AND itemSku IN ('SKU-00146', 'SKU-00152', 'SKU-00158')
+    AND returnFlag = 'No'
+  GROUP BY itemSku, businessDate
+)
+SELECT
+  eligible_sku_day.itemSku,
+  eligible_sku_day.businessDate,
+  COALESCE(daily_sales.units_sold, 0) AS units_sold,
+  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,
+  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat
+FROM eligible_sku_day
+LEFT JOIN daily_sales
+  ON daily_sales.itemSku = eligible_sku_day.itemSku
+ AND daily_sales.businessDate = eligible_sku_day.businessDate
+ORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;","[{""itemSku"":""SKU-00146"",""businessDate"":""2025-03-01"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00146"",""businessDate"":""2025-03-02"",""units_sold"":1,""revenue_incl_vat"":3.01,""cost_ex_vat"":1.67},{""itemSku"":""SKU-00146"",""businessDate"":""2025-03-03"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00146"",""businessDate"":""2025-03-04"",""units_sold"":5,""revenue_incl_vat"":13.92,""cost_ex_vat"":8.35},{""itemSku"":""SKU-00146"",""businessDate"":""2025-03-05"",""units_sold"":1,""revenue_incl_vat"":3.16,""cost_ex_vat"":1.67},{""itemSku"":""SKU-00146"",""businessDate"":""2025-03-06"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00146"",""businessDate"":""2025-03-07"",""units_sold"":3,""revenue_incl_vat"":8.12,""cost_ex_vat"":5.01},{""itemSku"":""SKU-00146"",""businessDate"":""2025-03-08"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00146"",""businessDate"":""2025-03-09"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00146"",""businessDate"":""2025-03-10"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00146"",""businessDate"":""2025-03-11"",""units_sold"":1,""revenue_incl_vat"":2.77,""cost_ex_vat"":1.67},{""itemSku"":""SKU-00146"",""businessDate"":""2025-03-12"",""units_sold"":4,""revenue_incl_vat"":10.76,""cost_ex_vat"":6.68},{""itemSku"":""SKU-00146"",""businessDate"":""2025-03-13"",""units_sold"":2,""revenue_incl_vat"":4.72,""cost_ex_vat"":3.34},{""itemSku"":""SKU-00146"",""businessDate"":""2025-03-14"",""units_sold"":1,""revenue_incl_vat"":2.63,""cost_ex_vat"":1.67},{""itemSku"":""SKU-00146"",""businessDate"":""2025-03-15"",""units_sold"":1,""revenue_incl_vat"":3.38,""cost_ex_vat"":1.67},{""itemSku"":""SKU-00152"",""businessDate"":""2025-03-01"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00152"",""businessDate"":""2025-03-02"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00152"",""businessDate"":""2025-03-03"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00152"",""businessDate"":""2025-03-04"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00152"",""businessDate"":""2025-03-05"",""units_sold"":1,""revenue_incl_vat"":2.79,""cost_ex_vat"":1.89},{""itemSku"":""SKU-00152"",""businessDate"":""2025-03-06"",""units_sold"":2,""revenue_incl_vat"":6.52,""cost_ex_vat"":3.78},{""itemSku"":""SKU-00152"",""businessDate"":""2025-03-07"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00152"",""businessDate"":""2025-03-08"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00152"",""businessDate"":""2025-03-09"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00152"",""businessDate"":""2025-03-10"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00152"",""businessDate"":""2025-03-11"",""units_sold"":1,""revenue_incl_vat"":2.95,""cost_ex_vat"":1.89},{""itemSku"":""SKU-00152"",""businessDate"":""2025-03-12"",""units_sold"":2,""revenue_incl_vat"":6.77,""cost_ex_vat"":3.78},{""itemSku"":""SKU-00152"",""businessDate"":""2025-03-13"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00152"",""businessDate"":""2025-03-14"",""units_sold"":2,""revenue_incl_vat"":6.44,""cost_ex_vat"":3.78},{""itemSku"":""SKU-00152"",""businessDate"":""2025-03-15"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0}]"
+"q019","For SKU-00163, SKU-00169, and SKU-00175 from 2025-03-16 to 2025-03-31, show daily units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.","WITH RECURSIVE date_spine(businessDate) AS (
+  SELECT DATE('2025-03-16')
+  UNION ALL
+  SELECT DATE(businessDate, '+1 day')
+  FROM date_spine
+  WHERE businessDate < DATE('2025-03-31')
+),
+sku_scope(itemSku) AS (
+  VALUES
+    ('SKU-00163'),
+    ('SKU-00169'),
+    ('SKU-00175')
+),
+eligible_sku_day AS (
+  SELECT
+    sku_scope.itemSku,
+    date_spine.businessDate
+  FROM sku_scope
+  JOIN items
+    ON items.itemSku = sku_scope.itemSku
+  CROSS JOIN date_spine
+  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))
+    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))
+),
+daily_sales AS (
+  SELECT
+    itemSku,
+    businessDate,
+    ROUND(SUM(units), 3) AS units_sold,
+    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,
+    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat
+  FROM transactions
+  WHERE businessDate >= DATE('2025-03-16')
+    AND businessDate <= DATE('2025-03-31')
+    AND itemSku IN ('SKU-00163', 'SKU-00169', 'SKU-00175')
+    AND returnFlag = 'No'
+  GROUP BY itemSku, businessDate
+)
+SELECT
+  eligible_sku_day.itemSku,
+  eligible_sku_day.businessDate,
+  COALESCE(daily_sales.units_sold, 0) AS units_sold,
+  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,
+  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat
+FROM eligible_sku_day
+LEFT JOIN daily_sales
+  ON daily_sales.itemSku = eligible_sku_day.itemSku
+ AND daily_sales.businessDate = eligible_sku_day.businessDate
+ORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;","[{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-16"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-17"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-18"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-19"",""units_sold"":3,""revenue_incl_vat"":70.03,""cost_ex_vat"":37.11},{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-20"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-21"",""units_sold"":1,""revenue_incl_vat"":20.49,""cost_ex_vat"":12.37},{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-22"",""units_sold"":3,""revenue_incl_vat"":67.84,""cost_ex_vat"":37.11},{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-23"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-24"",""units_sold"":1,""revenue_incl_vat"":18.5,""cost_ex_vat"":12.37},{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-25"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-26"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-27"",""units_sold"":3,""revenue_incl_vat"":76.59,""cost_ex_vat"":37.11},{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-28"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-29"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-30"",""units_sold"":1,""revenue_incl_vat"":24.95,""cost_ex_vat"":12.37},{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-31"",""units_sold"":8,""revenue_incl_vat"":205.73,""cost_ex_vat"":98.96},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-16"",""units_sold"":1,""revenue_incl_vat"":20.83,""cost_ex_vat"":10.66},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-17"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-18"",""units_sold"":1,""revenue_incl_vat"":21.98,""cost_ex_vat"":10.66},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-19"",""units_sold"":1,""revenue_incl_vat"":22.61,""cost_ex_vat"":10.66},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-20"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-21"",""units_sold"":1,""revenue_incl_vat"":20.67,""cost_ex_vat"":10.66},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-22"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-23"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-24"",""units_sold"":1,""revenue_incl_vat"":16.41,""cost_ex_vat"":10.66},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-25"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-26"",""units_sold"":3,""revenue_incl_vat"":53.25,""cost_ex_vat"":31.98},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-27"",""units_sold"":1,""revenue_incl_vat"":17.3,""cost_ex_vat"":10.66},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-28"",""units_sold"":3,""revenue_incl_vat"":69.2,""cost_ex_vat"":31.98},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-29"",""units_sold"":4,""revenue_incl_vat"":95.64,""cost_ex_vat"":42.64},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-30"",""units_sold"":2,""revenue_incl_vat"":46.7,""cost_ex_vat"":21.32},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-31"",""units_sold"":1,""revenue_incl_vat"":18.96,""cost_ex_vat"":10.66}]"
+"q020","Build a complete daily SKU-by-date series for SKU-00163, SKU-00169, and SKU-00175 from 2025-03-16 to 2025-03-31 with units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.","WITH RECURSIVE date_spine(businessDate) AS (
+  SELECT DATE('2025-03-16')
+  UNION ALL
+  SELECT DATE(businessDate, '+1 day')
+  FROM date_spine
+  WHERE businessDate < DATE('2025-03-31')
+),
+sku_scope(itemSku) AS (
+  VALUES
+    ('SKU-00163'),
+    ('SKU-00169'),
+    ('SKU-00175')
+),
+eligible_sku_day AS (
+  SELECT
+    sku_scope.itemSku,
+    date_spine.businessDate
+  FROM sku_scope
+  JOIN items
+    ON items.itemSku = sku_scope.itemSku
+  CROSS JOIN date_spine
+  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))
+    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))
+),
+daily_sales AS (
+  SELECT
+    itemSku,
+    businessDate,
+    ROUND(SUM(units), 3) AS units_sold,
+    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,
+    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat
+  FROM transactions
+  WHERE businessDate >= DATE('2025-03-16')
+    AND businessDate <= DATE('2025-03-31')
+    AND itemSku IN ('SKU-00163', 'SKU-00169', 'SKU-00175')
+    AND returnFlag = 'No'
+  GROUP BY itemSku, businessDate
+)
+SELECT
+  eligible_sku_day.itemSku,
+  eligible_sku_day.businessDate,
+  COALESCE(daily_sales.units_sold, 0) AS units_sold,
+  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,
+  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat
+FROM eligible_sku_day
+LEFT JOIN daily_sales
+  ON daily_sales.itemSku = eligible_sku_day.itemSku
+ AND daily_sales.businessDate = eligible_sku_day.businessDate
+ORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;","[{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-16"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-17"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-18"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-19"",""units_sold"":3,""revenue_incl_vat"":70.03,""cost_ex_vat"":37.11},{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-20"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-21"",""units_sold"":1,""revenue_incl_vat"":20.49,""cost_ex_vat"":12.37},{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-22"",""units_sold"":3,""revenue_incl_vat"":67.84,""cost_ex_vat"":37.11},{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-23"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-24"",""units_sold"":1,""revenue_incl_vat"":18.5,""cost_ex_vat"":12.37},{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-25"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-26"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-27"",""units_sold"":3,""revenue_incl_vat"":76.59,""cost_ex_vat"":37.11},{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-28"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-29"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-30"",""units_sold"":1,""revenue_incl_vat"":24.95,""cost_ex_vat"":12.37},{""itemSku"":""SKU-00169"",""businessDate"":""2025-03-31"",""units_sold"":8,""revenue_incl_vat"":205.73,""cost_ex_vat"":98.96},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-16"",""units_sold"":1,""revenue_incl_vat"":20.83,""cost_ex_vat"":10.66},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-17"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-18"",""units_sold"":1,""revenue_incl_vat"":21.98,""cost_ex_vat"":10.66},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-19"",""units_sold"":1,""revenue_incl_vat"":22.61,""cost_ex_vat"":10.66},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-20"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-21"",""units_sold"":1,""revenue_incl_vat"":20.67,""cost_ex_vat"":10.66},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-22"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-23"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-24"",""units_sold"":1,""revenue_incl_vat"":16.41,""cost_ex_vat"":10.66},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-25"",""units_sold"":0,""revenue_incl_vat"":0,""cost_ex_vat"":0},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-26"",""units_sold"":3,""revenue_incl_vat"":53.25,""cost_ex_vat"":31.98},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-27"",""units_sold"":1,""revenue_incl_vat"":17.3,""cost_ex_vat"":10.66},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-28"",""units_sold"":3,""revenue_incl_vat"":69.2,""cost_ex_vat"":31.98},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-29"",""units_sold"":4,""revenue_incl_vat"":95.64,""cost_ex_vat"":42.64},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-30"",""units_sold"":2,""revenue_incl_vat"":46.7,""cost_ex_vat"":21.32},{""itemSku"":""SKU-00175"",""businessDate"":""2025-03-31"",""units_sold"":1,""revenue_incl_vat"":18.96,""cost_ex_vat"":10.66}]"

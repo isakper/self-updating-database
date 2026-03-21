@@ -52,18 +52,18 @@ const resultColumnNamesJson = JSON.stringify([
   "cost_ex_vat",
 ]);
 const rollupPromptTemplates = [
-  "Show daily units sold, revenue, and cost across all stores for {skus} from {dateStart} to {dateEnd}.",
-  "Give me a day-by-day sales view for {skus} between {dateStart} and {dateEnd}, including units, revenue, and cost for the whole business.",
-  "I want the daily SKU totals for {skus} over {dateStart} to {dateEnd} with units sold, revenue, and cost rolled up across every store.",
-  "Can you break out daily units, revenue, and cost for {skus} from {dateStart} through {dateEnd}, summed across all stores?",
-  "Pull a daily all-store SKU summary for {skus} between {dateStart} and {dateEnd} with units sold, revenue, and cost.",
+  "Show daily units sold, gross revenue before returns (incl. VAT), and cost (excl. VAT) across all stores for {skus} from {dateStart} to {dateEnd}. Exclude returned rows.",
+  "Give me a day-by-day sales view for {skus} between {dateStart} and {dateEnd}, including units sold, gross revenue before returns (incl. VAT), and cost (excl. VAT) for the whole business. Exclude returned rows.",
+  "I want the daily SKU totals for {skus} over {dateStart} to {dateEnd} with units sold, gross revenue before returns (incl. VAT), and cost (excl. VAT) rolled up across every store. Exclude returned rows.",
+  "Can you break out daily units sold, gross revenue before returns (incl. VAT), and cost (excl. VAT) for {skus} from {dateStart} through {dateEnd}, summed across all stores? Exclude returned rows.",
+  "Pull a daily all-store SKU summary for {skus} between {dateStart} and {dateEnd} with units sold, gross revenue before returns (incl. VAT), and cost (excl. VAT). Exclude returned rows.",
 ];
 const zeroFillPromptTemplates = [
-  "Show the same daily SKU metrics across all stores for {skus} from {dateStart} to {dateEnd}, but include zero rows for days with no sales.",
-  "Give me the daily SKU trend for {skus} between {dateStart} and {dateEnd}, and backfill missing dates with zeroes when nothing sold.",
-  "I need a complete SKU-by-day series for {skus} from {dateStart} to {dateEnd}, with units, revenue, and cost set to 0 on no-sale days.",
-  "Return the daily all-store metrics for {skus} over {dateStart} to {dateEnd}, making sure dates with no sales still appear as zeroes.",
-  "Build the same daily rollup for {skus} from {dateStart} through {dateEnd}, but don’t drop empty days; fill them with 0s instead.",
+  "Show the same daily SKU metrics across all stores for {skus} from {dateStart} to {dateEnd}, but include zero rows for days with no sales. Exclude returned rows.",
+  "Give me the daily SKU trend for {skus} between {dateStart} and {dateEnd}, and backfill missing dates with zeroes when nothing sold. Exclude returned rows.",
+  "I need a complete SKU-by-day series for {skus} from {dateStart} to {dateEnd}, with units sold, gross revenue before returns (incl. VAT), and cost (excl. VAT) set to 0 on no-sale days. Exclude returned rows.",
+  "Return the daily all-store metrics for {skus} over {dateStart} to {dateEnd}, making sure dates with no sales still appear as zeroes. Exclude returned rows.",
+  "Build the same daily rollup for {skus} from {dateStart} through {dateEnd}, but don’t drop empty days; fill them with 0s instead. Exclude returned rows.",
 ];
 
 const scenarios: Scenario[] = [
@@ -260,9 +260,9 @@ function buildSkuDailyRollupSql(scenario: Scenario): string {
     "SELECT",
     "  item_sku,",
     "  business_date,",
-    "  SUM(units) AS units_sold,",
-    "  SUM(gross_sales_incl_vat) AS revenue_incl_vat,",
-    "  SUM(cogs_ex_vat) AS cost_ex_vat",
+    "  SUM(CASE WHEN is_return = 0 THEN units_gross ELSE 0 END) AS units_sold,",
+    "  SUM(CASE WHEN is_return = 0 THEN gross_sales_incl_vat ELSE 0 END) AS revenue_incl_vat,",
+    "  SUM(CASE WHEN is_return = 0 THEN cogs_ex_vat ELSE 0 END) AS cost_ex_vat",
     "FROM clean_transactions",
     `WHERE business_date >= DATE('${scenario.dateStart}')`,
     `  AND business_date <= DATE('${scenario.dateEnd}')`,
@@ -304,9 +304,9 @@ function buildSkuDailyZeroFillSql(scenario: Scenario): string {
     "    item_sku,",
     "    business_date,",
     "    item_sku || '|' || business_date AS sku_day_key,",
-    "    SUM(units) AS units_sold,",
-    "    SUM(gross_sales_incl_vat) AS revenue_incl_vat,",
-    "    SUM(cogs_ex_vat) AS cost_ex_vat",
+    "    SUM(CASE WHEN is_return = 0 THEN units_gross ELSE 0 END) AS units_sold,",
+    "    SUM(CASE WHEN is_return = 0 THEN gross_sales_incl_vat ELSE 0 END) AS revenue_incl_vat,",
+    "    SUM(CASE WHEN is_return = 0 THEN cogs_ex_vat ELSE 0 END) AS cost_ex_vat",
     "  FROM clean_transactions",
     `  WHERE business_date >= DATE('${scenario.dateStart}')`,
     `    AND business_date <= DATE('${scenario.dateEnd}')`,
@@ -341,27 +341,8 @@ function inclusiveDayCount(dateStart: string, dateEnd: string): number {
 function createWorkbook(rows: MockQueryLogRow[]): WorkBook {
   const workbook = utils.book_new();
   const queryLogsSheet = utils.json_to_sheet(rows);
-  const notesSheet = utils.json_to_sheet([
-    {
-      assumption:
-        "SQL assumes a cleaned fact table named clean_transactions with snake_case columns derived from the demo workbook.",
-      detail:
-        "This fixture is meant to seed query-log history, not to assert the exact pipeline output from a specific import run.",
-    },
-    {
-      assumption: "patternType=sku_daily_rollup",
-      detail:
-        "Daily grouped sales by SKU and business_date across all stores, with units_sold, revenue_incl_vat, and cost_ex_vat.",
-    },
-    {
-      assumption: "patternType=sku_daily_rollup_zero_fill",
-      detail:
-        "A date spine plus grouped sales so missing SKU-day combinations return zero values instead of disappearing.",
-    },
-  ]);
 
   utils.book_append_sheet(workbook, queryLogsSheet, "query_logs");
-  utils.book_append_sheet(workbook, notesSheet, "notes");
 
   return workbook;
 }

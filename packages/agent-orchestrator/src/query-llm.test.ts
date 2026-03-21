@@ -41,6 +41,12 @@ describe("buildSqlGenerationPrompt", () => {
     expect(prompt).toContain("agg_orders_by_region");
     expect(prompt).toContain("must start with SELECT or WITH");
     expect(prompt).toContain("not a SQL schema name");
+    expect(prompt).toContain(
+      "For gross revenue or gross sales questions, treat gross as pre-return sales"
+    );
+    expect(prompt).toContain(
+      "For net revenue or net sales questions, include return impact"
+    );
   });
 
   it("streams SQL deltas from the responses API", async () => {
