@@ -10,7 +10,8 @@ This document is the system-of-record for how the self-updating database is stru
 - The ingestion system converts workbook sheets into an immutable source database.
 - Codex CLI analyzes imported structure and writes a transformation pipeline stored in the platform database.
 - The transformation pipeline builds a separate optimized query database for interactive querying.
-- Users submit natural-language questions in the web app.
+- Operators can drive the full upload-to-optimization loop from the CLI.
+- Users submit natural-language questions through CLI or web surfaces.
 - The backend translates the request into SQL against the optimized query database, executes it, and logs execution metadata.
 - Logged queries are clustered by similarity, frequency, and cost.
 - Expensive, high-frequency clusters trigger Codex CLI to revise the transformation pipeline so future queries become cheaper and easier.
@@ -21,6 +22,7 @@ This document is the system-of-record for how the self-updating database is stru
 
 - `apps/web`: TypeScript frontend for workbook upload, query workspace, query history, and optimization insights.
 - `apps/api`: TypeScript backend for ingestion orchestration, natural-language query execution, logging, clustering, and optimization jobs.
+- `apps/cli`: TypeScript operator CLI for dataset upload, pipeline/optimization triggers, status checks, and query execution.
 
 ### Shared packages
 
@@ -102,11 +104,11 @@ Cross-cutting integrations enter through explicit provider or adapter boundaries
 
 ## System flow
 
-1. User uploads an Excel workbook in `apps/web`.
+1. User uploads an Excel workbook in `apps/cli` or `apps/web`.
 2. `apps/api` parses sheets, records provenance, and loads an immutable source database.
 3. Codex CLI is invoked through `packages/agent-orchestrator` to propose an initial transformation pipeline.
 4. `packages/pipeline-sdk` and `packages/database-core` execute the pipeline and build the optimized query database.
-5. User sends a natural-language query through the web app.
+5. User sends a natural-language query through the CLI or web app.
 6. Backend validates the request, generates SQL, executes it against the optimized query database, and returns results.
 7. Backend stores a query execution log with prompt, SQL, latency, cost signals, and outcome.
 8. Background clustering jobs group similar queries and track high-frequency expensive clusters.
