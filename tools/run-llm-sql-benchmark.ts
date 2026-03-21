@@ -10,6 +10,7 @@ interface BenchmarkQuestion {
 }
 
 interface BenchmarkScenario {
+  columnDescriptions: PipelineColumnDescription[];
   databasePath: string;
   description: string;
   key: "scenario_1_raw" | "scenario_2_clean" | "scenario_3a_optimized";
@@ -55,7 +56,13 @@ interface ScriptOptions {
   sourceDatabasePath: string;
 }
 
-type QueryRow = Record<string, null | number | string>;
+type QueryRow = Record<string, boolean | null | number | string>;
+
+interface PipelineColumnDescription {
+  columnName: string;
+  description: string;
+  tableName: string;
+}
 
 interface OpenAiResponsesPayload {
   output?: Array<{
@@ -154,18 +161,27 @@ try {
 
   const scenarios: BenchmarkScenario[] = [
     {
+      columnDescriptions: [],
       databasePath: rawScenarioPath,
       description: "Scenario 1: original uncleaned workbook schema.",
       key: "scenario_1_raw",
       name: "Scenario 1 (Raw)",
     },
     {
+      columnDescriptions: readPipelineColumnDescriptions(
+        sourceDatabase,
+        basePipelineVersionId
+      ),
       databasePath: cleanDatabasePath,
       description: "Scenario 2: cleaned canonical schema.",
       key: "scenario_2_clean",
       name: "Scenario 2 (Clean)",
     },
     {
+      columnDescriptions: readPipelineColumnDescriptions(
+        sourceDatabase,
+        optimizedPipelineVersionId
+      ),
       databasePath: optimizedDatabasePath,
       description:
         "Scenario 3a: optimized schema built on top of cleaned data.",
@@ -186,6 +202,7 @@ try {
       for (const question of benchmarkQuestions) {
         console.log(`[${scenario.key}] running ${question.id}`);
         const generationPrompt = buildSqlGenerationPrompt({
+          columnDescriptions: scenario.columnDescriptions,
           question: question.question,
           scenarioDescription: scenario.description,
           schemaDescription: schema.schemaDescription,
@@ -533,6 +550,68 @@ function readLatestSucceededOptimizationRevision(
   };
 }
 
+function readPipelineColumnDescriptions(
+  sourceDatabase: Database,
+  pipelineVersionId: string
+): PipelineColumnDescription[] {
+  const rows = executeQuery(
+    sourceDatabase,
+    `SELECT analysis_json
+     FROM pipeline_versions
+     WHERE pipeline_version_id = '${escapeSqlLiteral(pipelineVersionId)}'
+     LIMIT 1;`
+  );
+
+  const rawAnalysis = rows[0]?.analysis_json;
+  if (typeof rawAnalysis !== "string" || rawAnalysis.trim().length === 0) {
+    return [];
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawAnalysis);
+  } catch {
+    return [];
+  }
+
+  if (!parsed || typeof parsed !== "object") {
+    return [];
+  }
+
+  const candidate = parsed as { columnDescriptions?: unknown };
+  if (!Array.isArray(candidate.columnDescriptions)) {
+    return [];
+  }
+
+  return candidate.columnDescriptions.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") {
+      return [];
+    }
+
+    const record = entry as {
+      columnName?: unknown;
+      description?: unknown;
+      tableName?: unknown;
+    };
+
+    if (
+      typeof record.tableName !== "string" ||
+      typeof record.columnName !== "string" ||
+      typeof record.description !== "string"
+    ) {
+      return [];
+    }
+
+    return [
+      {
+        columnName: record.columnName,
+        description: record.description,
+        tableName: record.tableName,
+      },
+    ];
+  });
+}
+
 function buildRawScenarioDatabase(options: {
   SQL: SqlJsStatic;
   sourceDatabase: Database;
@@ -605,7 +684,12 @@ function createTableFromRows(
   database.exec("BEGIN;");
 
   for (const row of rows) {
-    insert.run(columns.map((column) => row[column] ?? null));
+    insert.run(
+      columns.map((column) => {
+        const value = row[column] ?? null;
+        return typeof value === "boolean" ? (value ? 1 : 0) : value;
+      })
+    );
   }
 
   insert.free();
@@ -674,10 +758,21 @@ function inspectDatabaseSchema(database: Database): {
 }
 
 function buildSqlGenerationPrompt(options: {
+  columnDescriptions: PipelineColumnDescription[];
   question: string;
   scenarioDescription: string;
   schemaDescription: string;
 }): string {
+  const columnDescriptionsSection =
+    options.columnDescriptions.length > 0
+      ? `\nColumn descriptions:\n${options.columnDescriptions
+          .map(
+            (entry) =>
+              `- ${entry.tableName}.${entry.columnName}: ${entry.description}`
+          )
+          .join("\n")}`
+      : "";
+
   return `You generate exactly one SQLite SQL statement.
 
 ${options.scenarioDescription}
@@ -687,6 +782,7 @@ ${options.question}
 
 Available schema:
 ${options.schemaDescription}
+${columnDescriptionsSection}
 
 Rules:
 - Return SQL only.
@@ -695,6 +791,7 @@ Rules:
 - Use only tables/views shown in Available schema.
 - Do not use ATTACH, PRAGMA, DDL, or write operations.
 - Do not invent tables or columns.
+- If column descriptions are provided, treat them as semantic guidance for metric definitions.
 - For gross revenue or gross sales questions, treat gross as pre-return sales and exclude returned rows when a return flag exists.
 - For net revenue or net sales questions, include return impact instead of excluding returned rows.
 - If a return-flag column exists, use schema-appropriate values (for example, is_return = 0/1 or returnFlag = 'No'/'Yes') to model returns correctly.
@@ -1120,7 +1217,7 @@ function normalizeRowsStrictInOrder(rows: QueryRow[]): string[] {
         }
         return 0;
       })
-      .map((key) => [key, normalizeValue(row[key])]);
+      .map((key) => [key, normalizeValue(row[key] ?? null)]);
     return JSON.stringify(normalizedEntries);
   });
 }
@@ -1137,7 +1234,9 @@ function normalizeRowsRelaxed(rows: QueryRow[]): string[] {
     .sort();
 }
 
-function normalizeValue(value: null | number | string): null | number | string {
+function normalizeValue(
+  value: boolean | null | number | string
+): boolean | null | number | string {
   if (typeof value === "number") {
     if (Number.isInteger(value)) {
       return value;

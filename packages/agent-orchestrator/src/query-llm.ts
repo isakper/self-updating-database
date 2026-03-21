@@ -2,11 +2,15 @@ import { readFile } from "node:fs/promises";
 
 import initSqlJs, { type Database } from "sql.js";
 
-import type { OptimizationHint } from "../../shared/src/index.js";
+import type {
+  OptimizationHint,
+  PipelineColumnDescription,
+} from "../../shared/src/index.js";
 
 export interface GenerateQueryTextOptions {
   cleanDatabaseId: string;
   cleanDatabasePath: string;
+  columnDescriptions?: PipelineColumnDescription[];
   optimizationHints?: OptimizationHint[];
   onDelta?: (chunk: string) => void;
   prompt: string;
@@ -137,6 +141,15 @@ export function buildSqlGenerationPrompt(
   options: GenerateQueryTextOptions,
   databaseContext: CleanDatabaseContext
 ): string {
+  const columnDescriptionsSection =
+    options.columnDescriptions && options.columnDescriptions.length > 0
+      ? `\nColumn descriptions:\n${options.columnDescriptions
+          .map(
+            (entry) =>
+              `- ${entry.tableName}.${entry.columnName}: ${entry.description}`
+          )
+          .join("\n")}`
+      : "";
   const optimizationHints =
     options.optimizationHints && options.optimizationHints.length > 0
       ? `\nOptimization hints:\n${options.optimizationHints
@@ -158,6 +171,7 @@ ${options.prompt}
 
 Clean database schema:
 ${databaseContext.schemaDescription}
+${columnDescriptionsSection}
 ${optimizationHints}
 
 Rules:
@@ -171,6 +185,7 @@ Rules:
 - Do not use markdown fences.
 - Do not explain the answer.
 - Do not invent tables or columns.
+- If column descriptions are provided, treat them as semantic guidance for metric definitions.
 - For gross revenue or gross sales questions, treat gross as pre-return sales and exclude returned rows when a return flag exists.
 - For net revenue or net sales questions, include return impact instead of excluding returned rows.
 - If a return-flag column exists, use schema-appropriate values (for example, is_return = 0/1 or returnFlag = 'No'/'Yes') to model returns correctly.

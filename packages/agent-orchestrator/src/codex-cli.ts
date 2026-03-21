@@ -345,7 +345,48 @@ export function parseAnalysisArtifact(rawJson: string): CodexAnalysisArtifact {
     throw new Error("analysis.json does not match the required contract.");
   }
 
+  const rawColumnDescriptions = analysis.columnDescriptions;
+
+  if (
+    rawColumnDescriptions !== undefined &&
+    !Array.isArray(rawColumnDescriptions)
+  ) {
+    throw new Error(
+      "analysis.json columnDescriptions must be an array when present."
+    );
+  }
+
+  const columnDescriptions =
+    rawColumnDescriptions === undefined
+      ? undefined
+      : rawColumnDescriptions.map((entry) => {
+          if (!entry || typeof entry !== "object") {
+            throw new Error(
+              "analysis.json contains an invalid columnDescriptions entry."
+            );
+          }
+
+          const record = entry as Record<string, unknown>;
+
+          if (
+            typeof record.tableName !== "string" ||
+            typeof record.columnName !== "string" ||
+            typeof record.description !== "string"
+          ) {
+            throw new Error(
+              "analysis.json contains a malformed columnDescriptions entry."
+            );
+          }
+
+          return {
+            columnName: record.columnName,
+            description: record.description,
+            tableName: record.tableName,
+          };
+        });
+
   return {
+    ...(columnDescriptions ? { columnDescriptions } : {}),
     findings: analysis.findings.map((finding) => {
       if (!finding || typeof finding !== "object") {
         throw new Error("analysis.json contains an invalid finding.");

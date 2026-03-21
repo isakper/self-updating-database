@@ -180,9 +180,16 @@ export function createCodexCliOptimizationGenerator(
             `analysis.json sourceDatasetId mismatch: expected ${input.sourceDatasetId}, received ${parsedAnalysis.sourceDatasetId}.`
           );
         }
+        const normalizedAnalysis = {
+          ...parsedAnalysis,
+          columnDescriptions: parsedAnalysis.columnDescriptions ?? [],
+        };
 
         const result: GeneratedOptimizationArtifacts = {
-          analysisJson: parsedAnalysis as unknown as Record<string, unknown>,
+          analysisJson: normalizedAnalysis as unknown as Record<
+            string,
+            unknown
+          >,
           decision: decision.decision,
           optimizationHints: decision.optimizationHints,
           prompt,
@@ -305,8 +312,14 @@ analysis.json contract:
     - message: string
     - proposedFix: string
     - confidence: "low" | "medium" | "high"
+  - columnDescriptions: array of objects with:
+    - tableName: string
+    - columnName: string
+    - description: string
 - explain why no change or change is appropriate
 - include the candidate cluster ids you considered in the findings or summary
+- if decision is "pipeline_revision", include one columnDescriptions entry for each newly introduced column in new or reshaped optimized objects
+- if decision is "no_change", set columnDescriptions to an empty array
 
 summary.md contract:
 - short human summary of your decision

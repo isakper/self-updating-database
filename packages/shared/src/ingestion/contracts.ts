@@ -53,7 +53,14 @@ export interface CodexAnalysisFinding {
   target: string;
 }
 
+export interface PipelineColumnDescription {
+  columnName: string;
+  description: string;
+  tableName: string;
+}
+
 export interface CodexAnalysisArtifact {
+  columnDescriptions?: PipelineColumnDescription[];
   findings: CodexAnalysisFinding[];
   sourceDatasetId: string;
   summary: string;
