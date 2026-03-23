@@ -10,6 +10,7 @@ interface BenchmarkQuestion {
 }
 
 interface BenchmarkScenario {
+  columnDescriptions: PipelineColumnDescription[];
   databasePath: string;
   description: string;
   key: "scenario_1_raw" | "scenario_2_clean" | "scenario_3a_optimized";
@@ -47,6 +48,7 @@ interface BenchmarkResultRow {
 
 interface ScriptOptions {
   datasetId: string;
+  evaluationConcurrency: number;
   evaluationModel: string;
   inferenceModel: string;
   outputCsvPath: string;
@@ -55,7 +57,13 @@ interface ScriptOptions {
   sourceDatabasePath: string;
 }
 
-type QueryRow = Record<string, null | number | string>;
+type QueryRow = Record<string, boolean | null | number | string>;
+
+interface PipelineColumnDescription {
+  columnName: string;
+  description: string;
+  tableName: string;
+}
 
 interface OpenAiResponsesPayload {
   output?: Array<{
@@ -95,6 +103,10 @@ const DEFAULT_INFERENCE_MODEL =
   process.env.OPENAI_QUERY_MODEL ??
   "gpt-5.4";
 const DEFAULT_EVALUATION_MODEL = process.env.OPENAI_QUERY_MODEL ?? "gpt-5.4";
+const DEFAULT_EVALUATION_CONCURRENCY = parsePositiveInteger(
+  process.env.EVALUATION_CONCURRENCY,
+  16
+);
 const DEFAULT_SOURCE_DATABASE_PATH =
   process.env.SOURCE_DATABASE_PATH ?? ".data/source-datasets.sqlite";
 
@@ -154,18 +166,27 @@ try {
 
   const scenarios: BenchmarkScenario[] = [
     {
+      columnDescriptions: [],
       databasePath: rawScenarioPath,
       description: "Scenario 1: original uncleaned workbook schema.",
       key: "scenario_1_raw",
       name: "Scenario 1 (Raw)",
     },
     {
+      columnDescriptions: readPipelineColumnDescriptions(
+        sourceDatabase,
+        basePipelineVersionId
+      ),
       databasePath: cleanDatabasePath,
       description: "Scenario 2: cleaned canonical schema.",
       key: "scenario_2_clean",
       name: "Scenario 2 (Clean)",
     },
     {
+      columnDescriptions: readPipelineColumnDescriptions(
+        sourceDatabase,
+        optimizedPipelineVersionId
+      ),
       databasePath: optimizedDatabasePath,
       description:
         "Scenario 3a: optimized schema built on top of cleaned data.",
@@ -186,6 +207,7 @@ try {
       for (const question of benchmarkQuestions) {
         console.log(`[${scenario.key}] running ${question.id}`);
         const generationPrompt = buildSqlGenerationPrompt({
+          columnDescriptions: scenario.columnDescriptions,
           question: question.question,
           scenarioDescription: scenario.description,
           schemaDescription: schema.schemaDescription,
@@ -244,6 +266,7 @@ try {
             const rowEvaluationRun = await evaluateRowsWithLlm({
               actualRows,
               apiKey: process.env.OPENAI_API_KEY,
+              evaluationConcurrency: options.evaluationConcurrency,
               evaluationModel: options.evaluationModel,
               expectedRows,
               question: question.question,
@@ -411,6 +434,10 @@ function parseOptions(args: string[]): ScriptOptions {
 
   return {
     datasetId,
+    evaluationConcurrency: parsePositiveInteger(
+      firstOption(options, "evaluation-concurrency"),
+      DEFAULT_EVALUATION_CONCURRENCY
+    ),
     evaluationModel:
       firstOption(options, "evaluation-model") ?? DEFAULT_EVALUATION_MODEL,
     inferenceModel:
@@ -436,6 +463,22 @@ function firstOption(
   }
 
   return values[0] ?? null;
+}
+
+function parsePositiveInteger(
+  candidate: string | null | undefined,
+  fallback: number
+): number {
+  if (!candidate) {
+    return fallback;
+  }
+
+  const parsed = Number.parseInt(candidate, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return parsed;
 }
 
 function openDatabase(SQLModule: SqlJsStatic, path: string): Database {
@@ -533,6 +576,68 @@ function readLatestSucceededOptimizationRevision(
   };
 }
 
+function readPipelineColumnDescriptions(
+  sourceDatabase: Database,
+  pipelineVersionId: string
+): PipelineColumnDescription[] {
+  const rows = executeQuery(
+    sourceDatabase,
+    `SELECT analysis_json
+     FROM pipeline_versions
+     WHERE pipeline_version_id = '${escapeSqlLiteral(pipelineVersionId)}'
+     LIMIT 1;`
+  );
+
+  const rawAnalysis = rows[0]?.analysis_json;
+  if (typeof rawAnalysis !== "string" || rawAnalysis.trim().length === 0) {
+    return [];
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawAnalysis);
+  } catch {
+    return [];
+  }
+
+  if (!parsed || typeof parsed !== "object") {
+    return [];
+  }
+
+  const candidate = parsed as { columnDescriptions?: unknown };
+  if (!Array.isArray(candidate.columnDescriptions)) {
+    return [];
+  }
+
+  return candidate.columnDescriptions.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") {
+      return [];
+    }
+
+    const record = entry as {
+      columnName?: unknown;
+      description?: unknown;
+      tableName?: unknown;
+    };
+
+    if (
+      typeof record.tableName !== "string" ||
+      typeof record.columnName !== "string" ||
+      typeof record.description !== "string"
+    ) {
+      return [];
+    }
+
+    return [
+      {
+        columnName: record.columnName,
+        description: record.description,
+        tableName: record.tableName,
+      },
+    ];
+  });
+}
+
 function buildRawScenarioDatabase(options: {
   SQL: SqlJsStatic;
   sourceDatabase: Database;
@@ -605,7 +710,12 @@ function createTableFromRows(
   database.exec("BEGIN;");
 
   for (const row of rows) {
-    insert.run(columns.map((column) => row[column] ?? null));
+    insert.run(
+      columns.map((column) => {
+        const value = row[column] ?? null;
+        return typeof value === "boolean" ? (value ? 1 : 0) : value;
+      })
+    );
   }
 
   insert.free();
@@ -674,10 +784,21 @@ function inspectDatabaseSchema(database: Database): {
 }
 
 function buildSqlGenerationPrompt(options: {
+  columnDescriptions: PipelineColumnDescription[];
   question: string;
   scenarioDescription: string;
   schemaDescription: string;
 }): string {
+  const columnDescriptionsSection =
+    options.columnDescriptions.length > 0
+      ? `\nColumn descriptions:\n${options.columnDescriptions
+          .map(
+            (entry) =>
+              `- ${entry.tableName}.${entry.columnName}: ${entry.description}`
+          )
+          .join("\n")}`
+      : "";
+
   return `You generate exactly one SQLite SQL statement.
 
 ${options.scenarioDescription}
@@ -687,6 +808,7 @@ ${options.question}
 
 Available schema:
 ${options.schemaDescription}
+${columnDescriptionsSection}
 
 Rules:
 - Return SQL only.
@@ -695,6 +817,7 @@ Rules:
 - Use only tables/views shown in Available schema.
 - Do not use ATTACH, PRAGMA, DDL, or write operations.
 - Do not invent tables or columns.
+- If column descriptions are provided, treat them as semantic guidance for metric definitions.
 - For gross revenue or gross sales questions, treat gross as pre-return sales and exclude returned rows when a return flag exists.
 - For net revenue or net sales questions, include return impact instead of excluding returned rows.
 - If a return-flag column exists, use schema-appropriate values (for example, is_return = 0/1 or returnFlag = 'No'/'Yes') to model returns correctly.
@@ -734,42 +857,75 @@ function stripMarkdownSqlFences(text: string): string {
 async function evaluateRowsWithLlm(options: {
   actualRows: QueryRow[];
   apiKey: string;
+  evaluationConcurrency: number;
   evaluationModel: string;
   expectedRows: QueryRow[];
   question: string;
   scenarioName: string;
 }): Promise<LlmRowEvaluationRun> {
-  const evaluations: LlmRowEvaluationResponse[] = [];
-  const prompts: string[] = [];
+  const rowRuns = await mapWithConcurrency(
+    options.expectedRows,
+    options.evaluationConcurrency,
+    async (expectedRow, index) => {
+      const prompt = buildRowEvaluationPrompt({
+        actualRows: options.actualRows,
+        expectedRow,
+        question: options.question,
+        rowIndex: index,
+        scenarioName: options.scenarioName,
+      });
 
-  for (let index = 0; index < options.expectedRows.length; index += 1) {
-    const expectedRow = options.expectedRows[index];
-    if (!expectedRow) {
-      continue;
+      const responseText = await callOpenAiText({
+        apiKey: options.apiKey,
+        model: options.evaluationModel,
+        prompt,
+      });
+
+      return {
+        evaluation: parseRowEvaluationResponse(responseText),
+        prompt,
+      };
     }
-    const prompt = buildRowEvaluationPrompt({
-      actualRows: options.actualRows,
-      expectedRow,
-      question: options.question,
-      rowIndex: index,
-      scenarioName: options.scenarioName,
-    });
-    prompts.push(prompt);
-
-    const responseText = await callOpenAiText({
-      apiKey: options.apiKey,
-      model: options.evaluationModel,
-      prompt,
-    });
-
-    const parsed = parseRowEvaluationResponse(responseText);
-    evaluations.push(parsed);
-  }
+  );
 
   return {
-    evaluations,
-    prompts,
+    evaluations: rowRuns.map((rowRun) => rowRun.evaluation),
+    prompts: rowRuns.map((rowRun) => rowRun.prompt),
   };
+}
+
+async function mapWithConcurrency<TInput, TOutput>(
+  items: TInput[],
+  concurrency: number,
+  mapper: (item: TInput, index: number) => Promise<TOutput>
+): Promise<TOutput[]> {
+  if (items.length === 0) {
+    return [];
+  }
+
+  const workerCount = Math.max(1, Math.min(concurrency, items.length));
+  const results = new Array<TOutput>(items.length);
+  let nextIndex = 0;
+
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (true) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+
+      if (currentIndex >= items.length) {
+        return;
+      }
+
+      const item = items[currentIndex];
+      if (item === undefined) {
+        continue;
+      }
+      results[currentIndex] = await mapper(item, currentIndex);
+    }
+  });
+
+  await Promise.all(workers);
+  return results;
 }
 
 function buildRowEvaluationPrompt(options: {
@@ -1120,7 +1276,7 @@ function normalizeRowsStrictInOrder(rows: QueryRow[]): string[] {
         }
         return 0;
       })
-      .map((key) => [key, normalizeValue(row[key])]);
+      .map((key) => [key, normalizeValue(row[key] ?? null)]);
     return JSON.stringify(normalizedEntries);
   });
 }
@@ -1137,7 +1293,9 @@ function normalizeRowsRelaxed(rows: QueryRow[]): string[] {
     .sort();
 }
 
-function normalizeValue(value: null | number | string): null | number | string {
+function normalizeValue(
+  value: boolean | null | number | string
+): boolean | null | number | string {
   if (typeof value === "number") {
     if (Number.isInteger(value)) {
       return value;

@@ -267,6 +267,11 @@ Cleaning scope:
 - allow high-confidence spelling/value normalization when justified by observed data
 - do not invent new business meaning
 - do not drop rows unless absolutely required and explicitly justified
+- treat cleanup as normalization-only:
+  - do not add or remove tables
+  - do not add or remove columns
+  - do not add or remove rows
+  - allowed: rename columns and normalize/standardize existing cell values
 - preserve numeric precision from source data; do not round monetary or quantity values in the cleaning pipeline
 - optimize for a clean-database schema that is easy for an LLM to understand and query
 - preserve return semantics when return indicators exist (for example, returnFlag or is_return)
@@ -274,7 +279,6 @@ Cleaning scope:
   - gross metrics should represent pre-return amounts
   - net metrics should include return impact
 - prefer a small number of clear, well-named tables over many narrow or redundant tables
-- do not add new tables or columns unless they meaningfully simplify likely queries
 - avoid schema changes that make the database more fragmented or harder for an LLM to navigate
 
 Output contract:
@@ -345,7 +349,48 @@ export function parseAnalysisArtifact(rawJson: string): CodexAnalysisArtifact {
     throw new Error("analysis.json does not match the required contract.");
   }
 
+  const rawColumnDescriptions = analysis.columnDescriptions;
+
+  if (
+    rawColumnDescriptions !== undefined &&
+    !Array.isArray(rawColumnDescriptions)
+  ) {
+    throw new Error(
+      "analysis.json columnDescriptions must be an array when present."
+    );
+  }
+
+  const columnDescriptions =
+    rawColumnDescriptions === undefined
+      ? undefined
+      : rawColumnDescriptions.map((entry) => {
+          if (!entry || typeof entry !== "object") {
+            throw new Error(
+              "analysis.json contains an invalid columnDescriptions entry."
+            );
+          }
+
+          const record = entry as Record<string, unknown>;
+
+          if (
+            typeof record.tableName !== "string" ||
+            typeof record.columnName !== "string" ||
+            typeof record.description !== "string"
+          ) {
+            throw new Error(
+              "analysis.json contains a malformed columnDescriptions entry."
+            );
+          }
+
+          return {
+            columnName: record.columnName,
+            description: record.description,
+            tableName: record.tableName,
+          };
+        });
+
   return {
+    ...(columnDescriptions ? { columnDescriptions } : {}),
     findings: analysis.findings.map((finding) => {
       if (!finding || typeof finding !== "object") {
         throw new Error("analysis.json contains an invalid finding.");

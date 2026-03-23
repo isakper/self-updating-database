@@ -9,6 +9,8 @@
 
 After importing `retailer-transactions-demo.xlsx`, upload `retailer-transactions-demo-query-logs.xlsx` from the "Query History + SQL Logs" tab to seed repeated query patterns for clustering and optimization demos.
 
+For reproducible validation across time, keep a `baseline_pipeline_version_id` column in the log workbook rows (metadata column). This lets evaluators route replay to the intended cleaned baseline revision even when newer pipeline versions exist.
+
 Use the "DB Walkthrough + Flow Diagram" tab to copy SQL snippets for showing the same story directly from SQLite tables in VS Code.
 
 Successful natural-language query runs now store sampled result rows in `query_execution_logs.result_rows_sample_json` so result inspection is also DB-first during demos.

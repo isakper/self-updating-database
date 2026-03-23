@@ -53,6 +53,24 @@ export async function startApiServer(options: ApiServerOptions = {}): Promise<{
   const optimizationRetryLimitPerCandidate = readPositiveIntegerFromEnv(
     "OPTIMIZATION_RETRY_LIMIT_PER_CANDIDATE"
   );
+  const optimizationParityMaxAttempts = readPositiveIntegerFromEnv(
+    "OPTIMIZATION_PARITY_MAX_ATTEMPTS"
+  );
+  const optimizationValidationMaxLogs = readPositiveIntegerFromEnv(
+    "OPTIMIZATION_VALIDATION_MAX_LOGS"
+  );
+  const optimizationValidationFullResultMaxRows = readPositiveIntegerFromEnv(
+    "OPTIMIZATION_VALIDATION_FULL_RESULT_MAX_ROWS"
+  );
+  const optimizationValidationFullResultMaxCells = readPositiveIntegerFromEnv(
+    "OPTIMIZATION_VALIDATION_FULL_RESULT_MAX_CELLS"
+  );
+  const optimizationValidationPerLogTimeoutMs = readPositiveIntegerFromEnv(
+    "OPTIMIZATION_VALIDATION_PER_LOG_TIMEOUT_MS"
+  );
+  const optimizationParityMinPassRatio = readRatioFromEnv(
+    "OPTIMIZATION_PARITY_MIN_PASS_RATIO"
+  );
   const database = await openSourceDatabase({
     databaseFilePath: resolve(
       options.databaseFilePath ??
@@ -129,9 +147,32 @@ export async function startApiServer(options: ApiServerOptions = {}): Promise<{
     ...(optimizationRetryLimitPerCandidate !== undefined
       ? { optimizationRetryLimitPerCandidate }
       : {}),
+    ...(optimizationParityMaxAttempts !== undefined
+      ? { optimizationParityMaxAttempts }
+      : {}),
+    ...(optimizationValidationMaxLogs !== undefined
+      ? { optimizationValidationMaxLogs }
+      : {}),
+    ...(optimizationValidationFullResultMaxRows !== undefined
+      ? { optimizationValidationFullResultMaxRows }
+      : {}),
+    ...(optimizationValidationFullResultMaxCells !== undefined
+      ? { optimizationValidationFullResultMaxCells }
+      : {}),
+    ...(optimizationValidationPerLogTimeoutMs !== undefined
+      ? { optimizationValidationPerLogTimeoutMs }
+      : {}),
+    ...(optimizationParityMinPassRatio !== undefined
+      ? { optimizationParityMinPassRatio }
+      : {}),
     onRunEvent: (runEvent) => {
       codexRunEventHub.publish(runEvent);
     },
+    queryGenerator: createOpenAiSqlQueryGenerator(),
+    querySqlValidator: {
+      validate: validateQuerySql,
+    },
+    queryExecutor: createSqliteQueryExecutor(),
     repository,
     sourceDatabasePath: database.databaseFilePath,
     sqlValidator: {
@@ -198,7 +239,7 @@ export async function startApiServer(options: ApiServerOptions = {}): Promise<{
           return;
         }
 
-        const handledOptimizationRequest = handleOptimizationRequest({
+        const handledOptimizationRequest = await handleOptimizationRequest({
           api: optimizationApi,
           request,
           response,
@@ -300,4 +341,16 @@ function readBooleanFromEnv(name: string): boolean | undefined {
   }
 
   return undefined;
+}
+
+function readRatioFromEnv(name: string): number | undefined {
+  const rawValue = process.env[name];
+  if (!rawValue) {
+    return undefined;
+  }
+  const parsed = Number(rawValue);
+  if (!Number.isFinite(parsed)) {
+    return undefined;
+  }
+  return parsed;
 }

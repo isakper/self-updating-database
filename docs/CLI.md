@@ -21,6 +21,8 @@ This doc defines the operator-first CLI workflow for ingestion, pipeline orchest
    - `pnpm cli pipeline run <datasetId>`
 4. Trigger optimization pipeline run explicitly:
    - `pnpm cli optimization run <datasetId>`
+5. Optional reproducibility pin (must match the currently active pipeline version for the dataset):
+   - `pnpm cli optimization run <datasetId> --base-pipeline-version-id <pipelineVersionId>`
 
 ## Operational commands
 
@@ -35,3 +37,4 @@ This doc defines the operator-first CLI workflow for ingestion, pipeline orchest
 
 - Source database remains immutable; pipeline and optimization only rebuild derived clean databases.
 - Trigger commands are asynchronous; use `status` or `events` to confirm completion.
+- When `--base-pipeline-version-id` is provided, optimization is accepted only if that id matches the dataset's active pipeline version.

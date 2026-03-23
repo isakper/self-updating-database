@@ -121,6 +121,11 @@ async function main(): Promise<void> {
         message?: string;
       }>({
         apiBaseUrl,
+        body: command.basePipelineVersionId
+          ? {
+              basePipelineVersionId: command.basePipelineVersionId,
+            }
+          : undefined,
         method: "POST",
         path: `/api/optimization-runs/${command.datasetId}`,
       });

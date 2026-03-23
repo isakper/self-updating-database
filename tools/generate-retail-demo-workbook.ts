@@ -23,7 +23,6 @@ type ItemRecord = {
   packSize: string;
   unitOfMeasure: string;
   isPrivateLabel: "Yes" | "No";
-  launchDate: string;
   discontinuedDate: string | null;
   baseVatRate: number;
   costExVat: number;
@@ -521,11 +520,6 @@ function buildItems(): ItemRecord[] {
           catalog.department,
           catalog.category
         );
-        const launchDate = dateString(
-          2023 + (variantIndex % 3),
-          1 + ((variantIndex * 2) % 12),
-          5 + variantIndex
-        );
         const isPrivateLabel = variantIndex % 4 === 0 ? "Yes" : "No";
         const supplierId = `SUP-${String(100 + itemCounter).padStart(4, "0")}`;
         const description = `${brand} ${subcategory} ${size}`;
@@ -539,7 +533,6 @@ function buildItems(): ItemRecord[] {
           packSize: size,
           unitOfMeasure: catalog.uom,
           isPrivateLabel,
-          launchDate,
           discontinuedDate: itemCounter % 37 === 0 ? "2025-09-30" : null,
           baseVatRate: catalog.vatRate,
           costExVat: roundCurrency(baseCost * (0.9 + rng() * 0.45)),

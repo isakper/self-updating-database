@@ -421,15 +421,25 @@ export class SqliteSourceDatasetRepository implements IngestionRepository {
       return undefined;
     }
 
+    const activePipelineVersionId = readNullableString(
+      stateRow,
+      "pipeline_version_id"
+    );
+    const activePipelineRunId = readNullableString(stateRow, "pipeline_run_id");
+
     return {
       cleanDatabase: parseCleanDatabaseSummary(stateRow),
       cleanDatabaseStatus: readStatus(stateRow, "clean_database_status"),
       lastPipelineError: readNullableString(stateRow, "last_pipeline_error"),
       nextRetryAt: readNullableString(stateRow, "next_retry_at"),
       pipelineRetryCount: readNumber(stateRow, "pipeline_retry_count"),
-      pipelineRun: this.getLatestPipelineRun(datasetId) ?? null,
+      pipelineRun: activePipelineRunId
+        ? this.getPipelineRunById(activePipelineRunId) ?? null
+        : null,
       pipelineStatus: readStatus(stateRow, "pipeline_status"),
-      pipelineVersion: this.getLatestPipelineVersion(datasetId) ?? null,
+      pipelineVersion: activePipelineVersionId
+        ? this.getPipelineVersionById(activePipelineVersionId) ?? null
+        : null,
     };
   }
 
@@ -505,6 +515,36 @@ export class SqliteSourceDatasetRepository implements IngestionRepository {
     return parsePipelineVersionRecord(versionRow);
   }
 
+  getPipelineVersionById(
+    pipelineVersionId: string
+  ): PipelineVersionRecord | undefined {
+    const versionRow = readRows(
+      this.#connection.database,
+      `
+        SELECT
+          pipeline_id,
+          pipeline_version_id,
+          source_dataset_id,
+          prompt_markdown,
+          sql_text,
+          analysis_json,
+          summary_markdown,
+          created_at,
+          created_by
+        FROM pipeline_versions
+        WHERE pipeline_version_id = $pipelineVersionId
+        LIMIT 1
+      `,
+      { $pipelineVersionId: pipelineVersionId }
+    )[0];
+
+    if (!versionRow) {
+      return undefined;
+    }
+
+    return parsePipelineVersionRecord(versionRow);
+  }
+
   savePipelineRun(runRecord: PipelineRunRecord): void {
     this.#connection.database.run(
       `
@@ -567,6 +607,33 @@ export class SqliteSourceDatasetRepository implements IngestionRepository {
         LIMIT 1
       `,
       { $datasetId: datasetId }
+    )[0];
+
+    if (!runRow) {
+      return undefined;
+    }
+
+    return parsePipelineRunRecord(runRow);
+  }
+
+  getPipelineRunById(runId: string): PipelineRunRecord | undefined {
+    const runRow = readRows(
+      this.#connection.database,
+      `
+        SELECT
+          run_id,
+          pipeline_version_id,
+          source_dataset_id,
+          status,
+          run_started_at,
+          run_finished_at,
+          retry_count,
+          run_error
+        FROM pipeline_runs
+        WHERE run_id = $runId
+        LIMIT 1
+      `,
+      { $runId: runId }
     )[0];
 
     if (!runRow) {
@@ -664,6 +731,7 @@ export class SqliteSourceDatasetRepository implements IngestionRepository {
           query_log_id,
           source_dataset_id,
           clean_database_id,
+          is_benchmark_log,
           prompt,
           generated_sql,
           summary_markdown,
@@ -691,6 +759,7 @@ export class SqliteSourceDatasetRepository implements IngestionRepository {
           $queryLogId,
           $sourceDatasetId,
           $cleanDatabaseId,
+          $isBenchmarkLog,
           $prompt,
           $generatedSql,
           $summaryMarkdown,
@@ -717,6 +786,7 @@ export class SqliteSourceDatasetRepository implements IngestionRepository {
       `,
       {
         $cleanDatabaseId: queryLog.cleanDatabaseId,
+        $isBenchmarkLog: queryLog.isBenchmarkLog ? 1 : 0,
         $errorMessage: queryLog.errorMessage,
         $executionFinishedAt: queryLog.executionFinishedAt,
         $executionLatencyMs: queryLog.executionLatencyMs,
@@ -770,6 +840,7 @@ export class SqliteSourceDatasetRepository implements IngestionRepository {
           query_log_id,
           source_dataset_id,
           clean_database_id,
+          is_benchmark_log,
           prompt,
           generated_sql,
           summary_markdown,
@@ -1159,6 +1230,7 @@ function initializeSourceDatabase(database: Database): void {
       query_log_id TEXT PRIMARY KEY,
       source_dataset_id TEXT NOT NULL,
       clean_database_id TEXT NOT NULL,
+      is_benchmark_log INTEGER NOT NULL DEFAULT 0,
       prompt TEXT NOT NULL,
       generated_sql TEXT,
       summary_markdown TEXT,
@@ -1267,6 +1339,12 @@ function initializeSourceDatabase(database: Database): void {
     "pipeline_versions",
     "prompt_markdown",
     "TEXT NOT NULL DEFAULT ''"
+  );
+  ensureColumnExists(
+    database,
+    "query_execution_logs",
+    "is_benchmark_log",
+    "INTEGER NOT NULL DEFAULT 0"
   );
   ensureColumnExists(
     database,
@@ -1450,6 +1528,7 @@ function parseQueryExecutionLog(
 
   return {
     cleanDatabaseId: readString(row, "clean_database_id"),
+    isBenchmarkLog: readNumber(row, "is_benchmark_log") === 1,
     errorMessage: readNullableString(row, "error_message"),
     executionFinishedAt: readNullableString(row, "execution_finished_at"),
     executionLatencyMs: readNullableNumber(row, "execution_latency_ms"),

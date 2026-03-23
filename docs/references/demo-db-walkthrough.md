@@ -97,5 +97,7 @@ LIMIT 20;
 ## Operator controls (API)
 
 - Trigger optimization run now: `POST /api/optimization-runs/:datasetId`
+- Trigger optimization run pinned to active baseline revision:
+  - `POST /api/optimization-runs/:datasetId` with JSON body `{"basePipelineVersionId":"pipeline_version_..."}`.
 - Retry latest failed optimization: `POST /api/optimization-retries/:datasetId`
 - Rerun pipeline generation/build: `POST /api/imports/:datasetId/pipeline-rerun`

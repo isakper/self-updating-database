@@ -10,6 +10,8 @@ import type {
   GeneratedSqlRecord,
   NaturalLanguageQueryRequest,
   NaturalLanguageQueryResponse,
+  PipelineColumnDescription,
+  PipelineVersionRecord,
   QueryExecutionLog,
   WorkbookUploadRequest,
 } from "../../../../packages/shared/src/index.js";
@@ -122,12 +124,15 @@ export function createQueryApi(options: CreateQueryApiOptions): QueryApi {
       return options.repository.listQueryExecutionLogs(sourceDatasetId, limit);
     },
     async runNaturalLanguageQuery(request) {
-      const { cleanDatabase } = getReadyDatasetState(
+      const { cleanDatabase, pipelineVersion } = getReadyDatasetState(
         options.repository,
         request.sourceDatasetId
       );
 
       const generationStartedAt = now();
+      const pipelineColumnDescriptions = pipelineVersion
+        ? readPipelineColumnDescriptions(pipelineVersion.analysisJson)
+        : [];
       const optimizationHints = options.repository.listActiveOptimizationHints(
         request.sourceDatasetId
       );
@@ -145,6 +150,7 @@ export function createQueryApi(options: CreateQueryApiOptions): QueryApi {
         const generated = await options.queryGenerator.generateSql({
           cleanDatabaseId: cleanDatabase.cleanDatabaseId,
           cleanDatabasePath: cleanDatabase.databaseFilePath,
+          columnDescriptions: pipelineColumnDescriptions,
           optimizationHints,
           onDelta: (chunk) => {
             publishRunEvent({
@@ -299,6 +305,7 @@ function getReadyDatasetState(
   sourceDatasetId: string
 ): {
   cleanDatabase: CleanDatabaseSummary;
+  pipelineVersion: PipelineVersionRecord | null;
 } {
   const dataset = repository.getById(sourceDatasetId);
 
@@ -325,7 +332,52 @@ function getReadyDatasetState(
 
   return {
     cleanDatabase,
+    pipelineVersion: processingState.pipelineVersion,
   };
+}
+
+function readPipelineColumnDescriptions(
+  analysisJson: unknown
+): PipelineColumnDescription[] {
+  if (!analysisJson || typeof analysisJson !== "object") {
+    return [];
+  }
+
+  const record = analysisJson as {
+    columnDescriptions?: unknown;
+  };
+
+  if (!Array.isArray(record.columnDescriptions)) {
+    return [];
+  }
+
+  return record.columnDescriptions.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") {
+      return [];
+    }
+
+    const candidate = entry as {
+      columnName?: unknown;
+      description?: unknown;
+      tableName?: unknown;
+    };
+
+    if (
+      typeof candidate.tableName !== "string" ||
+      typeof candidate.columnName !== "string" ||
+      typeof candidate.description !== "string"
+    ) {
+      return [];
+    }
+
+    return [
+      {
+        columnName: candidate.columnName,
+        description: candidate.description,
+        tableName: candidate.tableName,
+      },
+    ];
+  });
 }
 
 function publishRunEvent(options: {
@@ -383,6 +435,7 @@ function createQueryExecutionLog(options: {
 
   return {
     cleanDatabaseId: options.cleanDatabaseId,
+    isBenchmarkLog: false,
     errorMessage: options.errorMessage ?? null,
     executionFinishedAt: options.executionFinishedAt?.toISOString() ?? null,
     executionLatencyMs:

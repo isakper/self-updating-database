@@ -5,7 +5,11 @@ export type CliCommand =
   | { filePath: string; kind: "upload_workbook" }
   | { datasetId: string; filePath: string; kind: "upload_query_logs" }
   | { datasetId: string; kind: "pipeline_run" }
-  | { datasetId: string; kind: "optimization_run" }
+  | {
+      basePipelineVersionId?: string;
+      datasetId: string;
+      kind: "optimization_run";
+    }
   | { datasetId: string; kind: "optimization_retry_latest_failed" }
   | {
       datasetId: string;
@@ -137,8 +141,30 @@ export function parseCliArgs(argv: string[]): ParseResult {
     };
   }
 
-  if (group === "optimization" && action === "run" && rest.length === 1) {
+  if (group === "optimization" && action === "run" && rest.length >= 1) {
     const datasetId = rest[0];
+    let basePipelineVersionId: string | undefined;
+
+    for (let index = 1; index < rest.length; index += 1) {
+      const token = rest[index];
+      if (token === "--base-pipeline-version-id") {
+        const value = rest[index + 1];
+        if (!value) {
+          return {
+            error: "--base-pipeline-version-id requires a value.",
+            options,
+          };
+        }
+        basePipelineVersionId = value;
+        index += 1;
+        continue;
+      }
+
+      return {
+        error: `Unknown optimization run flag: ${token}`,
+        options,
+      };
+    }
 
     if (!datasetId) {
       return {
@@ -148,10 +174,17 @@ export function parseCliArgs(argv: string[]): ParseResult {
     }
 
     return {
-      command: {
-        datasetId,
-        kind: "optimization_run",
-      },
+      command:
+        basePipelineVersionId === undefined
+          ? {
+              datasetId,
+              kind: "optimization_run",
+            }
+          : {
+              basePipelineVersionId,
+              datasetId,
+              kind: "optimization_run",
+            },
       options,
     };
   }
@@ -338,7 +371,7 @@ export function renderUsage(): string {
     "  upload workbook <workbook.xlsx>",
     "  upload query-logs <datasetId> <query-logs.xlsx>",
     "  pipeline run <datasetId>",
-    "  optimization run <datasetId>",
+    "  optimization run <datasetId> [--base-pipeline-version-id <pipelineVersionId>]",
     "  optimization retry-latest-failed <datasetId>",
     "  status <datasetId> [--watch] [--interval-ms <n>]",
     "  events <datasetId>",

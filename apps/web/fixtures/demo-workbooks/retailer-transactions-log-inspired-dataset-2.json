@@ -1,8 +1,8 @@
 [
   {
     "id": "q001",
-    "question": "For SKU-00001, SKU-00007, and SKU-00013 from 2025-01-01 to 2025-01-07, show daily units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.",
-    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-01-01')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-01-07')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00001'),\n    ('SKU-00007'),\n    ('SKU-00013')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  JOIN items\n    ON items.itemSku = sku_scope.itemSku\n  CROSS JOIN date_spine\n  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))\n    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-01-01')\n    AND businessDate <= DATE('2025-01-07')\n    AND itemSku IN ('SKU-00001', 'SKU-00007', 'SKU-00013')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
+    "question": "For SKU-00001, SKU-00007, and SKU-00013 from 2025-01-01 to 2025-01-07, show daily units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU, and return 0 when there were no sales on those dates.",
+    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-01-01')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-01-07')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00001'),\n    ('SKU-00007'),\n    ('SKU-00013')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  CROSS JOIN date_spine\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-01-01')\n    AND businessDate <= DATE('2025-01-07')\n    AND itemSku IN ('SKU-00001', 'SKU-00007', 'SKU-00013')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
     "expectedResult": [
       {
         "itemSku": "SKU-00001",
@@ -101,13 +101,62 @@
         "units_sold": 3,
         "revenue_incl_vat": 6.49,
         "cost_ex_vat": 3.78
+      },
+      {
+        "itemSku": "SKU-00013",
+        "businessDate": "2025-01-01",
+        "units_sold": 1,
+        "revenue_incl_vat": 2.56,
+        "cost_ex_vat": 1.5
+      },
+      {
+        "itemSku": "SKU-00013",
+        "businessDate": "2025-01-02",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00013",
+        "businessDate": "2025-01-03",
+        "units_sold": 1,
+        "revenue_incl_vat": 2.8,
+        "cost_ex_vat": 1.5
+      },
+      {
+        "itemSku": "SKU-00013",
+        "businessDate": "2025-01-04",
+        "units_sold": 2,
+        "revenue_incl_vat": 5.6,
+        "cost_ex_vat": 3
+      },
+      {
+        "itemSku": "SKU-00013",
+        "businessDate": "2025-01-05",
+        "units_sold": 2,
+        "revenue_incl_vat": 4.96,
+        "cost_ex_vat": 3
+      },
+      {
+        "itemSku": "SKU-00013",
+        "businessDate": "2025-01-06",
+        "units_sold": 4,
+        "revenue_incl_vat": 10.15,
+        "cost_ex_vat": 6
+      },
+      {
+        "itemSku": "SKU-00013",
+        "businessDate": "2025-01-07",
+        "units_sold": 3,
+        "revenue_incl_vat": 8.17,
+        "cost_ex_vat": 4.5
       }
     ]
   },
   {
     "id": "q002",
-    "question": "Build a complete daily SKU-by-date series for SKU-00001, SKU-00007, and SKU-00013 from 2025-01-01 to 2025-01-07 with units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.",
-    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-01-01')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-01-07')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00001'),\n    ('SKU-00007'),\n    ('SKU-00013')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  JOIN items\n    ON items.itemSku = sku_scope.itemSku\n  CROSS JOIN date_spine\n  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))\n    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-01-01')\n    AND businessDate <= DATE('2025-01-07')\n    AND itemSku IN ('SKU-00001', 'SKU-00007', 'SKU-00013')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
+    "question": "Build a complete daily SKU-by-date series for SKU-00001, SKU-00007, and SKU-00013 from 2025-01-01 to 2025-01-07 with units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU, and return 0 when there were no sales on those dates.",
+    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-01-01')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-01-07')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00001'),\n    ('SKU-00007'),\n    ('SKU-00013')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  CROSS JOIN date_spine\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-01-01')\n    AND businessDate <= DATE('2025-01-07')\n    AND itemSku IN ('SKU-00001', 'SKU-00007', 'SKU-00013')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
     "expectedResult": [
       {
         "itemSku": "SKU-00001",
@@ -206,13 +255,62 @@
         "units_sold": 3,
         "revenue_incl_vat": 6.49,
         "cost_ex_vat": 3.78
+      },
+      {
+        "itemSku": "SKU-00013",
+        "businessDate": "2025-01-01",
+        "units_sold": 1,
+        "revenue_incl_vat": 2.56,
+        "cost_ex_vat": 1.5
+      },
+      {
+        "itemSku": "SKU-00013",
+        "businessDate": "2025-01-02",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00013",
+        "businessDate": "2025-01-03",
+        "units_sold": 1,
+        "revenue_incl_vat": 2.8,
+        "cost_ex_vat": 1.5
+      },
+      {
+        "itemSku": "SKU-00013",
+        "businessDate": "2025-01-04",
+        "units_sold": 2,
+        "revenue_incl_vat": 5.6,
+        "cost_ex_vat": 3
+      },
+      {
+        "itemSku": "SKU-00013",
+        "businessDate": "2025-01-05",
+        "units_sold": 2,
+        "revenue_incl_vat": 4.96,
+        "cost_ex_vat": 3
+      },
+      {
+        "itemSku": "SKU-00013",
+        "businessDate": "2025-01-06",
+        "units_sold": 4,
+        "revenue_incl_vat": 10.15,
+        "cost_ex_vat": 6
+      },
+      {
+        "itemSku": "SKU-00013",
+        "businessDate": "2025-01-07",
+        "units_sold": 3,
+        "revenue_incl_vat": 8.17,
+        "cost_ex_vat": 4.5
       }
     ]
   },
   {
     "id": "q003",
-    "question": "For SKU-00022, SKU-00027, and SKU-00031 from 2025-01-08 to 2025-01-14, show daily units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.",
-    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-01-08')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-01-14')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00022'),\n    ('SKU-00027'),\n    ('SKU-00031')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  JOIN items\n    ON items.itemSku = sku_scope.itemSku\n  CROSS JOIN date_spine\n  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))\n    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-01-08')\n    AND businessDate <= DATE('2025-01-14')\n    AND itemSku IN ('SKU-00022', 'SKU-00027', 'SKU-00031')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
+    "question": "For SKU-00022, SKU-00027, and SKU-00031 from 2025-01-08 to 2025-01-14, show daily units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU, and return 0 when there were no sales on those dates.",
+    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-01-08')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-01-14')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00022'),\n    ('SKU-00027'),\n    ('SKU-00031')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  CROSS JOIN date_spine\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-01-08')\n    AND businessDate <= DATE('2025-01-14')\n    AND itemSku IN ('SKU-00022', 'SKU-00027', 'SKU-00031')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
     "expectedResult": [
       {
         "itemSku": "SKU-00022",
@@ -365,8 +463,8 @@
   },
   {
     "id": "q004",
-    "question": "Build a complete daily SKU-by-date series for SKU-00022, SKU-00027, and SKU-00031 from 2025-01-08 to 2025-01-14 with units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.",
-    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-01-08')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-01-14')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00022'),\n    ('SKU-00027'),\n    ('SKU-00031')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  JOIN items\n    ON items.itemSku = sku_scope.itemSku\n  CROSS JOIN date_spine\n  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))\n    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-01-08')\n    AND businessDate <= DATE('2025-01-14')\n    AND itemSku IN ('SKU-00022', 'SKU-00027', 'SKU-00031')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
+    "question": "Build a complete daily SKU-by-date series for SKU-00022, SKU-00027, and SKU-00031 from 2025-01-08 to 2025-01-14 with units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU, and return 0 when there were no sales on those dates.",
+    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-01-08')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-01-14')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00022'),\n    ('SKU-00027'),\n    ('SKU-00031')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  CROSS JOIN date_spine\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-01-08')\n    AND businessDate <= DATE('2025-01-14')\n    AND itemSku IN ('SKU-00022', 'SKU-00027', 'SKU-00031')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
     "expectedResult": [
       {
         "itemSku": "SKU-00022",
@@ -519,8 +617,8 @@
   },
   {
     "id": "q005",
-    "question": "For SKU-00044, SKU-00048, and SKU-00053 from 2025-01-15 to 2025-01-21, show daily units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.",
-    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-01-15')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-01-21')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00044'),\n    ('SKU-00048'),\n    ('SKU-00053')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  JOIN items\n    ON items.itemSku = sku_scope.itemSku\n  CROSS JOIN date_spine\n  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))\n    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-01-15')\n    AND businessDate <= DATE('2025-01-21')\n    AND itemSku IN ('SKU-00044', 'SKU-00048', 'SKU-00053')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
+    "question": "For SKU-00044, SKU-00048, and SKU-00053 from 2025-01-15 to 2025-01-21, show daily units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU, and return 0 when there were no sales on those dates.",
+    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-01-15')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-01-21')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00044'),\n    ('SKU-00048'),\n    ('SKU-00053')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  CROSS JOIN date_spine\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-01-15')\n    AND businessDate <= DATE('2025-01-21')\n    AND itemSku IN ('SKU-00044', 'SKU-00048', 'SKU-00053')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
     "expectedResult": [
       {
         "itemSku": "SKU-00044",
@@ -570,13 +668,111 @@
         "units_sold": 4.567,
         "revenue_incl_vat": 13.85,
         "cost_ex_vat": 9.59
+      },
+      {
+        "itemSku": "SKU-00048",
+        "businessDate": "2025-01-15",
+        "units_sold": 4.712,
+        "revenue_incl_vat": 10.4,
+        "cost_ex_vat": 8.1
+      },
+      {
+        "itemSku": "SKU-00048",
+        "businessDate": "2025-01-16",
+        "units_sold": 3.19,
+        "revenue_incl_vat": 8.54,
+        "cost_ex_vat": 5.49
+      },
+      {
+        "itemSku": "SKU-00048",
+        "businessDate": "2025-01-17",
+        "units_sold": 1.996,
+        "revenue_incl_vat": 4.23,
+        "cost_ex_vat": 3.43
+      },
+      {
+        "itemSku": "SKU-00048",
+        "businessDate": "2025-01-18",
+        "units_sold": 3.44,
+        "revenue_incl_vat": 8.45,
+        "cost_ex_vat": 5.92
+      },
+      {
+        "itemSku": "SKU-00048",
+        "businessDate": "2025-01-19",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00048",
+        "businessDate": "2025-01-20",
+        "units_sold": 3.596,
+        "revenue_incl_vat": 8.46,
+        "cost_ex_vat": 6.19
+      },
+      {
+        "itemSku": "SKU-00048",
+        "businessDate": "2025-01-21",
+        "units_sold": 3.65,
+        "revenue_incl_vat": 9.05,
+        "cost_ex_vat": 6.28
+      },
+      {
+        "itemSku": "SKU-00053",
+        "businessDate": "2025-01-15",
+        "units_sold": 2.056,
+        "revenue_incl_vat": 4.36,
+        "cost_ex_vat": 4.44
+      },
+      {
+        "itemSku": "SKU-00053",
+        "businessDate": "2025-01-16",
+        "units_sold": 4.016,
+        "revenue_incl_vat": 13.57,
+        "cost_ex_vat": 8.68
+      },
+      {
+        "itemSku": "SKU-00053",
+        "businessDate": "2025-01-17",
+        "units_sold": 2.328,
+        "revenue_incl_vat": 6.28,
+        "cost_ex_vat": 5.03
+      },
+      {
+        "itemSku": "SKU-00053",
+        "businessDate": "2025-01-18",
+        "units_sold": 2.156,
+        "revenue_incl_vat": 7.09,
+        "cost_ex_vat": 4.66
+      },
+      {
+        "itemSku": "SKU-00053",
+        "businessDate": "2025-01-19",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00053",
+        "businessDate": "2025-01-20",
+        "units_sold": 4.115,
+        "revenue_incl_vat": 12.78,
+        "cost_ex_vat": 8.9
+      },
+      {
+        "itemSku": "SKU-00053",
+        "businessDate": "2025-01-21",
+        "units_sold": 1.802,
+        "revenue_incl_vat": 6.25,
+        "cost_ex_vat": 3.89
       }
     ]
   },
   {
     "id": "q006",
-    "question": "Build a complete daily SKU-by-date series for SKU-00044, SKU-00048, and SKU-00053 from 2025-01-15 to 2025-01-21 with units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.",
-    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-01-15')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-01-21')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00044'),\n    ('SKU-00048'),\n    ('SKU-00053')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  JOIN items\n    ON items.itemSku = sku_scope.itemSku\n  CROSS JOIN date_spine\n  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))\n    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-01-15')\n    AND businessDate <= DATE('2025-01-21')\n    AND itemSku IN ('SKU-00044', 'SKU-00048', 'SKU-00053')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
+    "question": "Build a complete daily SKU-by-date series for SKU-00044, SKU-00048, and SKU-00053 from 2025-01-15 to 2025-01-21 with units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU, and return 0 when there were no sales on those dates.",
+    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-01-15')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-01-21')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00044'),\n    ('SKU-00048'),\n    ('SKU-00053')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  CROSS JOIN date_spine\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-01-15')\n    AND businessDate <= DATE('2025-01-21')\n    AND itemSku IN ('SKU-00044', 'SKU-00048', 'SKU-00053')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
     "expectedResult": [
       {
         "itemSku": "SKU-00044",
@@ -626,13 +822,111 @@
         "units_sold": 4.567,
         "revenue_incl_vat": 13.85,
         "cost_ex_vat": 9.59
+      },
+      {
+        "itemSku": "SKU-00048",
+        "businessDate": "2025-01-15",
+        "units_sold": 4.712,
+        "revenue_incl_vat": 10.4,
+        "cost_ex_vat": 8.1
+      },
+      {
+        "itemSku": "SKU-00048",
+        "businessDate": "2025-01-16",
+        "units_sold": 3.19,
+        "revenue_incl_vat": 8.54,
+        "cost_ex_vat": 5.49
+      },
+      {
+        "itemSku": "SKU-00048",
+        "businessDate": "2025-01-17",
+        "units_sold": 1.996,
+        "revenue_incl_vat": 4.23,
+        "cost_ex_vat": 3.43
+      },
+      {
+        "itemSku": "SKU-00048",
+        "businessDate": "2025-01-18",
+        "units_sold": 3.44,
+        "revenue_incl_vat": 8.45,
+        "cost_ex_vat": 5.92
+      },
+      {
+        "itemSku": "SKU-00048",
+        "businessDate": "2025-01-19",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00048",
+        "businessDate": "2025-01-20",
+        "units_sold": 3.596,
+        "revenue_incl_vat": 8.46,
+        "cost_ex_vat": 6.19
+      },
+      {
+        "itemSku": "SKU-00048",
+        "businessDate": "2025-01-21",
+        "units_sold": 3.65,
+        "revenue_incl_vat": 9.05,
+        "cost_ex_vat": 6.28
+      },
+      {
+        "itemSku": "SKU-00053",
+        "businessDate": "2025-01-15",
+        "units_sold": 2.056,
+        "revenue_incl_vat": 4.36,
+        "cost_ex_vat": 4.44
+      },
+      {
+        "itemSku": "SKU-00053",
+        "businessDate": "2025-01-16",
+        "units_sold": 4.016,
+        "revenue_incl_vat": 13.57,
+        "cost_ex_vat": 8.68
+      },
+      {
+        "itemSku": "SKU-00053",
+        "businessDate": "2025-01-17",
+        "units_sold": 2.328,
+        "revenue_incl_vat": 6.28,
+        "cost_ex_vat": 5.03
+      },
+      {
+        "itemSku": "SKU-00053",
+        "businessDate": "2025-01-18",
+        "units_sold": 2.156,
+        "revenue_incl_vat": 7.09,
+        "cost_ex_vat": 4.66
+      },
+      {
+        "itemSku": "SKU-00053",
+        "businessDate": "2025-01-19",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00053",
+        "businessDate": "2025-01-20",
+        "units_sold": 4.115,
+        "revenue_incl_vat": 12.78,
+        "cost_ex_vat": 8.9
+      },
+      {
+        "itemSku": "SKU-00053",
+        "businessDate": "2025-01-21",
+        "units_sold": 1.802,
+        "revenue_incl_vat": 6.25,
+        "cost_ex_vat": 3.89
       }
     ]
   },
   {
     "id": "q007",
-    "question": "For SKU-00061, SKU-00064, and SKU-00069 from 2025-01-22 to 2025-01-31, show daily units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.",
-    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-01-22')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-01-31')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00061'),\n    ('SKU-00064'),\n    ('SKU-00069')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  JOIN items\n    ON items.itemSku = sku_scope.itemSku\n  CROSS JOIN date_spine\n  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))\n    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-01-22')\n    AND businessDate <= DATE('2025-01-31')\n    AND itemSku IN ('SKU-00061', 'SKU-00064', 'SKU-00069')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
+    "question": "For SKU-00061, SKU-00064, and SKU-00069 from 2025-01-22 to 2025-01-31, show daily units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU, and return 0 when there were no sales on those dates.",
+    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-01-22')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-01-31')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00061'),\n    ('SKU-00064'),\n    ('SKU-00069')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  CROSS JOIN date_spine\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-01-22')\n    AND businessDate <= DATE('2025-01-31')\n    AND itemSku IN ('SKU-00061', 'SKU-00064', 'SKU-00069')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
     "expectedResult": [
       {
         "itemSku": "SKU-00061",
@@ -848,8 +1142,8 @@
   },
   {
     "id": "q008",
-    "question": "Build a complete daily SKU-by-date series for SKU-00061, SKU-00064, and SKU-00069 from 2025-01-22 to 2025-01-31 with units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.",
-    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-01-22')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-01-31')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00061'),\n    ('SKU-00064'),\n    ('SKU-00069')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  JOIN items\n    ON items.itemSku = sku_scope.itemSku\n  CROSS JOIN date_spine\n  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))\n    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-01-22')\n    AND businessDate <= DATE('2025-01-31')\n    AND itemSku IN ('SKU-00061', 'SKU-00064', 'SKU-00069')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
+    "question": "Build a complete daily SKU-by-date series for SKU-00061, SKU-00064, and SKU-00069 from 2025-01-22 to 2025-01-31 with units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU, and return 0 when there were no sales on those dates.",
+    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-01-22')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-01-31')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00061'),\n    ('SKU-00064'),\n    ('SKU-00069')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  CROSS JOIN date_spine\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-01-22')\n    AND businessDate <= DATE('2025-01-31')\n    AND itemSku IN ('SKU-00061', 'SKU-00064', 'SKU-00069')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
     "expectedResult": [
       {
         "itemSku": "SKU-00061",
@@ -1065,9 +1359,58 @@
   },
   {
     "id": "q009",
-    "question": "For SKU-00078, SKU-00082, and SKU-00086 from 2025-02-01 to 2025-02-07, show daily units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.",
-    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-02-01')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-02-07')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00078'),\n    ('SKU-00082'),\n    ('SKU-00086')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  JOIN items\n    ON items.itemSku = sku_scope.itemSku\n  CROSS JOIN date_spine\n  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))\n    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-02-01')\n    AND businessDate <= DATE('2025-02-07')\n    AND itemSku IN ('SKU-00078', 'SKU-00082', 'SKU-00086')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
+    "question": "For SKU-00078, SKU-00082, and SKU-00086 from 2025-02-01 to 2025-02-07, show daily units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU, and return 0 when there were no sales on those dates.",
+    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-02-01')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-02-07')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00078'),\n    ('SKU-00082'),\n    ('SKU-00086')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  CROSS JOIN date_spine\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-02-01')\n    AND businessDate <= DATE('2025-02-07')\n    AND itemSku IN ('SKU-00078', 'SKU-00082', 'SKU-00086')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
     "expectedResult": [
+      {
+        "itemSku": "SKU-00078",
+        "businessDate": "2025-02-01",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00078",
+        "businessDate": "2025-02-02",
+        "units_sold": 2,
+        "revenue_incl_vat": 6.57,
+        "cost_ex_vat": 4.78
+      },
+      {
+        "itemSku": "SKU-00078",
+        "businessDate": "2025-02-03",
+        "units_sold": 4,
+        "revenue_incl_vat": 14.44,
+        "cost_ex_vat": 9.56
+      },
+      {
+        "itemSku": "SKU-00078",
+        "businessDate": "2025-02-04",
+        "units_sold": 2,
+        "revenue_incl_vat": 6.78,
+        "cost_ex_vat": 4.78
+      },
+      {
+        "itemSku": "SKU-00078",
+        "businessDate": "2025-02-05",
+        "units_sold": 3,
+        "revenue_incl_vat": 11,
+        "cost_ex_vat": 7.17
+      },
+      {
+        "itemSku": "SKU-00078",
+        "businessDate": "2025-02-06",
+        "units_sold": 5,
+        "revenue_incl_vat": 19.81,
+        "cost_ex_vat": 11.95
+      },
+      {
+        "itemSku": "SKU-00078",
+        "businessDate": "2025-02-07",
+        "units_sold": 2,
+        "revenue_incl_vat": 5.39,
+        "cost_ex_vat": 4.78
+      },
       {
         "itemSku": "SKU-00082",
         "businessDate": "2025-02-01",
@@ -1170,9 +1513,58 @@
   },
   {
     "id": "q010",
-    "question": "Build a complete daily SKU-by-date series for SKU-00078, SKU-00082, and SKU-00086 from 2025-02-01 to 2025-02-07 with units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.",
-    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-02-01')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-02-07')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00078'),\n    ('SKU-00082'),\n    ('SKU-00086')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  JOIN items\n    ON items.itemSku = sku_scope.itemSku\n  CROSS JOIN date_spine\n  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))\n    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-02-01')\n    AND businessDate <= DATE('2025-02-07')\n    AND itemSku IN ('SKU-00078', 'SKU-00082', 'SKU-00086')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
+    "question": "Build a complete daily SKU-by-date series for SKU-00078, SKU-00082, and SKU-00086 from 2025-02-01 to 2025-02-07 with units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU, and return 0 when there were no sales on those dates.",
+    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-02-01')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-02-07')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00078'),\n    ('SKU-00082'),\n    ('SKU-00086')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  CROSS JOIN date_spine\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-02-01')\n    AND businessDate <= DATE('2025-02-07')\n    AND itemSku IN ('SKU-00078', 'SKU-00082', 'SKU-00086')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
     "expectedResult": [
+      {
+        "itemSku": "SKU-00078",
+        "businessDate": "2025-02-01",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00078",
+        "businessDate": "2025-02-02",
+        "units_sold": 2,
+        "revenue_incl_vat": 6.57,
+        "cost_ex_vat": 4.78
+      },
+      {
+        "itemSku": "SKU-00078",
+        "businessDate": "2025-02-03",
+        "units_sold": 4,
+        "revenue_incl_vat": 14.44,
+        "cost_ex_vat": 9.56
+      },
+      {
+        "itemSku": "SKU-00078",
+        "businessDate": "2025-02-04",
+        "units_sold": 2,
+        "revenue_incl_vat": 6.78,
+        "cost_ex_vat": 4.78
+      },
+      {
+        "itemSku": "SKU-00078",
+        "businessDate": "2025-02-05",
+        "units_sold": 3,
+        "revenue_incl_vat": 11,
+        "cost_ex_vat": 7.17
+      },
+      {
+        "itemSku": "SKU-00078",
+        "businessDate": "2025-02-06",
+        "units_sold": 5,
+        "revenue_incl_vat": 19.81,
+        "cost_ex_vat": 11.95
+      },
+      {
+        "itemSku": "SKU-00078",
+        "businessDate": "2025-02-07",
+        "units_sold": 2,
+        "revenue_incl_vat": 5.39,
+        "cost_ex_vat": 4.78
+      },
       {
         "itemSku": "SKU-00082",
         "businessDate": "2025-02-01",
@@ -1275,8 +1667,8 @@
   },
   {
     "id": "q011",
-    "question": "For SKU-00094, SKU-00099, and SKU-00104 from 2025-02-08 to 2025-02-14, show daily units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.",
-    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-02-08')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-02-14')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00094'),\n    ('SKU-00099'),\n    ('SKU-00104')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  JOIN items\n    ON items.itemSku = sku_scope.itemSku\n  CROSS JOIN date_spine\n  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))\n    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-02-08')\n    AND businessDate <= DATE('2025-02-14')\n    AND itemSku IN ('SKU-00094', 'SKU-00099', 'SKU-00104')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
+    "question": "For SKU-00094, SKU-00099, and SKU-00104 from 2025-02-08 to 2025-02-14, show daily units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU, and return 0 when there were no sales on those dates.",
+    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-02-08')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-02-14')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00094'),\n    ('SKU-00099'),\n    ('SKU-00104')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  CROSS JOIN date_spine\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-02-08')\n    AND businessDate <= DATE('2025-02-14')\n    AND itemSku IN ('SKU-00094', 'SKU-00099', 'SKU-00104')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
     "expectedResult": [
       {
         "itemSku": "SKU-00094",
@@ -1429,8 +1821,8 @@
   },
   {
     "id": "q012",
-    "question": "Build a complete daily SKU-by-date series for SKU-00094, SKU-00099, and SKU-00104 from 2025-02-08 to 2025-02-14 with units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.",
-    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-02-08')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-02-14')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00094'),\n    ('SKU-00099'),\n    ('SKU-00104')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  JOIN items\n    ON items.itemSku = sku_scope.itemSku\n  CROSS JOIN date_spine\n  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))\n    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-02-08')\n    AND businessDate <= DATE('2025-02-14')\n    AND itemSku IN ('SKU-00094', 'SKU-00099', 'SKU-00104')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
+    "question": "Build a complete daily SKU-by-date series for SKU-00094, SKU-00099, and SKU-00104 from 2025-02-08 to 2025-02-14 with units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU, and return 0 when there were no sales on those dates.",
+    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-02-08')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-02-14')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00094'),\n    ('SKU-00099'),\n    ('SKU-00104')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  CROSS JOIN date_spine\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-02-08')\n    AND businessDate <= DATE('2025-02-14')\n    AND itemSku IN ('SKU-00094', 'SKU-00099', 'SKU-00104')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
     "expectedResult": [
       {
         "itemSku": "SKU-00094",
@@ -1583,8 +1975,8 @@
   },
   {
     "id": "q013",
-    "question": "For SKU-00111, SKU-00115, and SKU-00119 from 2025-02-15 to 2025-02-21, show daily units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.",
-    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-02-15')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-02-21')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00111'),\n    ('SKU-00115'),\n    ('SKU-00119')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  JOIN items\n    ON items.itemSku = sku_scope.itemSku\n  CROSS JOIN date_spine\n  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))\n    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-02-15')\n    AND businessDate <= DATE('2025-02-21')\n    AND itemSku IN ('SKU-00111', 'SKU-00115', 'SKU-00119')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
+    "question": "For SKU-00111, SKU-00115, and SKU-00119 from 2025-02-15 to 2025-02-21, show daily units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU, and return 0 when there were no sales on those dates.",
+    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-02-15')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-02-21')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00111'),\n    ('SKU-00115'),\n    ('SKU-00119')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  CROSS JOIN date_spine\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-02-15')\n    AND businessDate <= DATE('2025-02-21')\n    AND itemSku IN ('SKU-00111', 'SKU-00115', 'SKU-00119')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
     "expectedResult": [
       {
         "itemSku": "SKU-00111",
@@ -1737,8 +2129,8 @@
   },
   {
     "id": "q014",
-    "question": "Build a complete daily SKU-by-date series for SKU-00111, SKU-00115, and SKU-00119 from 2025-02-15 to 2025-02-21 with units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.",
-    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-02-15')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-02-21')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00111'),\n    ('SKU-00115'),\n    ('SKU-00119')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  JOIN items\n    ON items.itemSku = sku_scope.itemSku\n  CROSS JOIN date_spine\n  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))\n    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-02-15')\n    AND businessDate <= DATE('2025-02-21')\n    AND itemSku IN ('SKU-00111', 'SKU-00115', 'SKU-00119')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
+    "question": "Build a complete daily SKU-by-date series for SKU-00111, SKU-00115, and SKU-00119 from 2025-02-15 to 2025-02-21 with units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU, and return 0 when there were no sales on those dates.",
+    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-02-15')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-02-21')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00111'),\n    ('SKU-00115'),\n    ('SKU-00119')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  CROSS JOIN date_spine\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-02-15')\n    AND businessDate <= DATE('2025-02-21')\n    AND itemSku IN ('SKU-00111', 'SKU-00115', 'SKU-00119')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
     "expectedResult": [
       {
         "itemSku": "SKU-00111",
@@ -1891,8 +2283,8 @@
   },
   {
     "id": "q015",
-    "question": "For SKU-00127, SKU-00132, and SKU-00137 from 2025-02-22 to 2025-02-28, show daily units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.",
-    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-02-22')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-02-28')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00127'),\n    ('SKU-00132'),\n    ('SKU-00137')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  JOIN items\n    ON items.itemSku = sku_scope.itemSku\n  CROSS JOIN date_spine\n  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))\n    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-02-22')\n    AND businessDate <= DATE('2025-02-28')\n    AND itemSku IN ('SKU-00127', 'SKU-00132', 'SKU-00137')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
+    "question": "For SKU-00127, SKU-00132, and SKU-00137 from 2025-02-22 to 2025-02-28, show daily units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU, and return 0 when there were no sales on those dates.",
+    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-02-22')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-02-28')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00127'),\n    ('SKU-00132'),\n    ('SKU-00137')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  CROSS JOIN date_spine\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-02-22')\n    AND businessDate <= DATE('2025-02-28')\n    AND itemSku IN ('SKU-00127', 'SKU-00132', 'SKU-00137')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
     "expectedResult": [
       {
         "itemSku": "SKU-00127",
@@ -2045,8 +2437,8 @@
   },
   {
     "id": "q016",
-    "question": "Build a complete daily SKU-by-date series for SKU-00127, SKU-00132, and SKU-00137 from 2025-02-22 to 2025-02-28 with units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.",
-    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-02-22')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-02-28')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00127'),\n    ('SKU-00132'),\n    ('SKU-00137')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  JOIN items\n    ON items.itemSku = sku_scope.itemSku\n  CROSS JOIN date_spine\n  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))\n    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-02-22')\n    AND businessDate <= DATE('2025-02-28')\n    AND itemSku IN ('SKU-00127', 'SKU-00132', 'SKU-00137')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
+    "question": "Build a complete daily SKU-by-date series for SKU-00127, SKU-00132, and SKU-00137 from 2025-02-22 to 2025-02-28 with units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU, and return 0 when there were no sales on those dates.",
+    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-02-22')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-02-28')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00127'),\n    ('SKU-00132'),\n    ('SKU-00137')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  CROSS JOIN date_spine\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-02-22')\n    AND businessDate <= DATE('2025-02-28')\n    AND itemSku IN ('SKU-00127', 'SKU-00132', 'SKU-00137')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
     "expectedResult": [
       {
         "itemSku": "SKU-00127",
@@ -2199,8 +2591,8 @@
   },
   {
     "id": "q017",
-    "question": "For SKU-00146, SKU-00152, and SKU-00158 from 2025-03-01 to 2025-03-15, show daily units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.",
-    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-03-01')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-03-15')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00146'),\n    ('SKU-00152'),\n    ('SKU-00158')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  JOIN items\n    ON items.itemSku = sku_scope.itemSku\n  CROSS JOIN date_spine\n  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))\n    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-03-01')\n    AND businessDate <= DATE('2025-03-15')\n    AND itemSku IN ('SKU-00146', 'SKU-00152', 'SKU-00158')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
+    "question": "For SKU-00146, SKU-00152, and SKU-00158 from 2025-03-01 to 2025-03-15, show daily units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU, and return 0 when there were no sales on those dates.",
+    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-03-01')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-03-15')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00146'),\n    ('SKU-00152'),\n    ('SKU-00158')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  CROSS JOIN date_spine\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-03-01')\n    AND businessDate <= DATE('2025-03-15')\n    AND itemSku IN ('SKU-00146', 'SKU-00152', 'SKU-00158')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
     "expectedResult": [
       {
         "itemSku": "SKU-00146",
@@ -2411,13 +2803,118 @@
         "units_sold": 0,
         "revenue_incl_vat": 0,
         "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00158",
+        "businessDate": "2025-03-01",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00158",
+        "businessDate": "2025-03-02",
+        "units_sold": 3,
+        "revenue_incl_vat": 9.12,
+        "cost_ex_vat": 6.63
+      },
+      {
+        "itemSku": "SKU-00158",
+        "businessDate": "2025-03-03",
+        "units_sold": 1,
+        "revenue_incl_vat": 4.54,
+        "cost_ex_vat": 2.21
+      },
+      {
+        "itemSku": "SKU-00158",
+        "businessDate": "2025-03-04",
+        "units_sold": 1,
+        "revenue_incl_vat": 4.09,
+        "cost_ex_vat": 2.21
+      },
+      {
+        "itemSku": "SKU-00158",
+        "businessDate": "2025-03-05",
+        "units_sold": 2,
+        "revenue_incl_vat": 7.48,
+        "cost_ex_vat": 4.42
+      },
+      {
+        "itemSku": "SKU-00158",
+        "businessDate": "2025-03-06",
+        "units_sold": 1,
+        "revenue_incl_vat": 4,
+        "cost_ex_vat": 2.21
+      },
+      {
+        "itemSku": "SKU-00158",
+        "businessDate": "2025-03-07",
+        "units_sold": 2,
+        "revenue_incl_vat": 7.14,
+        "cost_ex_vat": 4.42
+      },
+      {
+        "itemSku": "SKU-00158",
+        "businessDate": "2025-03-08",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00158",
+        "businessDate": "2025-03-09",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00158",
+        "businessDate": "2025-03-10",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00158",
+        "businessDate": "2025-03-11",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00158",
+        "businessDate": "2025-03-12",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00158",
+        "businessDate": "2025-03-13",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00158",
+        "businessDate": "2025-03-14",
+        "units_sold": 1,
+        "revenue_incl_vat": 3.04,
+        "cost_ex_vat": 2.21
+      },
+      {
+        "itemSku": "SKU-00158",
+        "businessDate": "2025-03-15",
+        "units_sold": 3,
+        "revenue_incl_vat": 9.95,
+        "cost_ex_vat": 6.63
       }
     ]
   },
   {
     "id": "q018",
-    "question": "Build a complete daily SKU-by-date series for SKU-00146, SKU-00152, and SKU-00158 from 2025-03-01 to 2025-03-15 with units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.",
-    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-03-01')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-03-15')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00146'),\n    ('SKU-00152'),\n    ('SKU-00158')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  JOIN items\n    ON items.itemSku = sku_scope.itemSku\n  CROSS JOIN date_spine\n  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))\n    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-03-01')\n    AND businessDate <= DATE('2025-03-15')\n    AND itemSku IN ('SKU-00146', 'SKU-00152', 'SKU-00158')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
+    "question": "Build a complete daily SKU-by-date series for SKU-00146, SKU-00152, and SKU-00158 from 2025-03-01 to 2025-03-15 with units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU, and return 0 when there were no sales on those dates.",
+    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-03-01')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-03-15')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00146'),\n    ('SKU-00152'),\n    ('SKU-00158')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  CROSS JOIN date_spine\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-03-01')\n    AND businessDate <= DATE('2025-03-15')\n    AND itemSku IN ('SKU-00146', 'SKU-00152', 'SKU-00158')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
     "expectedResult": [
       {
         "itemSku": "SKU-00146",
@@ -2628,14 +3125,231 @@
         "units_sold": 0,
         "revenue_incl_vat": 0,
         "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00158",
+        "businessDate": "2025-03-01",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00158",
+        "businessDate": "2025-03-02",
+        "units_sold": 3,
+        "revenue_incl_vat": 9.12,
+        "cost_ex_vat": 6.63
+      },
+      {
+        "itemSku": "SKU-00158",
+        "businessDate": "2025-03-03",
+        "units_sold": 1,
+        "revenue_incl_vat": 4.54,
+        "cost_ex_vat": 2.21
+      },
+      {
+        "itemSku": "SKU-00158",
+        "businessDate": "2025-03-04",
+        "units_sold": 1,
+        "revenue_incl_vat": 4.09,
+        "cost_ex_vat": 2.21
+      },
+      {
+        "itemSku": "SKU-00158",
+        "businessDate": "2025-03-05",
+        "units_sold": 2,
+        "revenue_incl_vat": 7.48,
+        "cost_ex_vat": 4.42
+      },
+      {
+        "itemSku": "SKU-00158",
+        "businessDate": "2025-03-06",
+        "units_sold": 1,
+        "revenue_incl_vat": 4,
+        "cost_ex_vat": 2.21
+      },
+      {
+        "itemSku": "SKU-00158",
+        "businessDate": "2025-03-07",
+        "units_sold": 2,
+        "revenue_incl_vat": 7.14,
+        "cost_ex_vat": 4.42
+      },
+      {
+        "itemSku": "SKU-00158",
+        "businessDate": "2025-03-08",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00158",
+        "businessDate": "2025-03-09",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00158",
+        "businessDate": "2025-03-10",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00158",
+        "businessDate": "2025-03-11",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00158",
+        "businessDate": "2025-03-12",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00158",
+        "businessDate": "2025-03-13",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00158",
+        "businessDate": "2025-03-14",
+        "units_sold": 1,
+        "revenue_incl_vat": 3.04,
+        "cost_ex_vat": 2.21
+      },
+      {
+        "itemSku": "SKU-00158",
+        "businessDate": "2025-03-15",
+        "units_sold": 3,
+        "revenue_incl_vat": 9.95,
+        "cost_ex_vat": 6.63
       }
     ]
   },
   {
     "id": "q019",
-    "question": "For SKU-00163, SKU-00169, and SKU-00175 from 2025-03-16 to 2025-03-31, show daily units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.",
-    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-03-16')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-03-31')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00163'),\n    ('SKU-00169'),\n    ('SKU-00175')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  JOIN items\n    ON items.itemSku = sku_scope.itemSku\n  CROSS JOIN date_spine\n  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))\n    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-03-16')\n    AND businessDate <= DATE('2025-03-31')\n    AND itemSku IN ('SKU-00163', 'SKU-00169', 'SKU-00175')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
+    "question": "For SKU-00163, SKU-00169, and SKU-00175 from 2025-03-16 to 2025-03-31, show daily units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU, and return 0 when there were no sales on those dates.",
+    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-03-16')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-03-31')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00163'),\n    ('SKU-00169'),\n    ('SKU-00175')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  CROSS JOIN date_spine\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-03-16')\n    AND businessDate <= DATE('2025-03-31')\n    AND itemSku IN ('SKU-00163', 'SKU-00169', 'SKU-00175')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
     "expectedResult": [
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-16",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-17",
+        "units_sold": 1,
+        "revenue_incl_vat": 26.56,
+        "cost_ex_vat": 12.59
+      },
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-18",
+        "units_sold": 1,
+        "revenue_incl_vat": 27.78,
+        "cost_ex_vat": 12.59
+      },
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-19",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-20",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-21",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-22",
+        "units_sold": 1,
+        "revenue_incl_vat": 20.06,
+        "cost_ex_vat": 12.59
+      },
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-23",
+        "units_sold": 1,
+        "revenue_incl_vat": 20.99,
+        "cost_ex_vat": 12.59
+      },
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-24",
+        "units_sold": 2,
+        "revenue_incl_vat": 48.53,
+        "cost_ex_vat": 25.18
+      },
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-25",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-26",
+        "units_sold": 3,
+        "revenue_incl_vat": 80.87,
+        "cost_ex_vat": 37.77
+      },
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-27",
+        "units_sold": 2,
+        "revenue_incl_vat": 43.62,
+        "cost_ex_vat": 25.18
+      },
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-28",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-29",
+        "units_sold": 1,
+        "revenue_incl_vat": 27.38,
+        "cost_ex_vat": 12.59
+      },
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-30",
+        "units_sold": 3,
+        "revenue_incl_vat": 72.5,
+        "cost_ex_vat": 37.77
+      },
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-31",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
       {
         "itemSku": "SKU-00169",
         "businessDate": "2025-03-16",
@@ -2864,9 +3578,121 @@
   },
   {
     "id": "q020",
-    "question": "Build a complete daily SKU-by-date series for SKU-00163, SKU-00169, and SKU-00175 from 2025-03-16 to 2025-03-31 with units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU only from its launch date onward (exclude pre-launch dates), and return 0 when there were no sales on eligible dates.",
-    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-03-16')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-03-31')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00163'),\n    ('SKU-00169'),\n    ('SKU-00175')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  JOIN items\n    ON items.itemSku = sku_scope.itemSku\n  CROSS JOIN date_spine\n  WHERE date_spine.businessDate >= COALESCE(NULLIF(items.launchDate, ''), DATE('0001-01-01'))\n    AND date_spine.businessDate <= COALESCE(NULLIF(items.discontinuedDate, ''), DATE('9999-12-31'))\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-03-16')\n    AND businessDate <= DATE('2025-03-31')\n    AND itemSku IN ('SKU-00163', 'SKU-00169', 'SKU-00175')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
+    "question": "Build a complete daily SKU-by-date series for SKU-00163, SKU-00169, and SKU-00175 from 2025-03-16 to 2025-03-31 with units sold, gross revenue before returns (incl. VAT; exclude returned items), and cost (excl. VAT). Include every date in the range for each SKU, and return 0 when there were no sales on those dates.",
+    "sql": "WITH RECURSIVE date_spine(businessDate) AS (\n  SELECT DATE('2025-03-16')\n  UNION ALL\n  SELECT DATE(businessDate, '+1 day')\n  FROM date_spine\n  WHERE businessDate < DATE('2025-03-31')\n),\nsku_scope(itemSku) AS (\n  VALUES\n    ('SKU-00163'),\n    ('SKU-00169'),\n    ('SKU-00175')\n),\neligible_sku_day AS (\n  SELECT\n    sku_scope.itemSku,\n    date_spine.businessDate\n  FROM sku_scope\n  CROSS JOIN date_spine\n),\ndaily_sales AS (\n  SELECT\n    itemSku,\n    businessDate,\n    ROUND(SUM(units), 3) AS units_sold,\n    ROUND(SUM(grossSalesInclVat), 2) AS revenue_incl_vat,\n    ROUND(SUM(cogsExVat), 2) AS cost_ex_vat\n  FROM transactions\n  WHERE businessDate >= DATE('2025-03-16')\n    AND businessDate <= DATE('2025-03-31')\n    AND itemSku IN ('SKU-00163', 'SKU-00169', 'SKU-00175')\n    AND returnFlag = 'No'\n  GROUP BY itemSku, businessDate\n)\nSELECT\n  eligible_sku_day.itemSku,\n  eligible_sku_day.businessDate,\n  COALESCE(daily_sales.units_sold, 0) AS units_sold,\n  COALESCE(daily_sales.revenue_incl_vat, 0) AS revenue_incl_vat,\n  COALESCE(daily_sales.cost_ex_vat, 0) AS cost_ex_vat\nFROM eligible_sku_day\nLEFT JOIN daily_sales\n  ON daily_sales.itemSku = eligible_sku_day.itemSku\n AND daily_sales.businessDate = eligible_sku_day.businessDate\nORDER BY eligible_sku_day.itemSku, eligible_sku_day.businessDate;",
     "expectedResult": [
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-16",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-17",
+        "units_sold": 1,
+        "revenue_incl_vat": 26.56,
+        "cost_ex_vat": 12.59
+      },
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-18",
+        "units_sold": 1,
+        "revenue_incl_vat": 27.78,
+        "cost_ex_vat": 12.59
+      },
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-19",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-20",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-21",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-22",
+        "units_sold": 1,
+        "revenue_incl_vat": 20.06,
+        "cost_ex_vat": 12.59
+      },
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-23",
+        "units_sold": 1,
+        "revenue_incl_vat": 20.99,
+        "cost_ex_vat": 12.59
+      },
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-24",
+        "units_sold": 2,
+        "revenue_incl_vat": 48.53,
+        "cost_ex_vat": 25.18
+      },
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-25",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-26",
+        "units_sold": 3,
+        "revenue_incl_vat": 80.87,
+        "cost_ex_vat": 37.77
+      },
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-27",
+        "units_sold": 2,
+        "revenue_incl_vat": 43.62,
+        "cost_ex_vat": 25.18
+      },
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-28",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-29",
+        "units_sold": 1,
+        "revenue_incl_vat": 27.38,
+        "cost_ex_vat": 12.59
+      },
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-30",
+        "units_sold": 3,
+        "revenue_incl_vat": 72.5,
+        "cost_ex_vat": 37.77
+      },
+      {
+        "itemSku": "SKU-00163",
+        "businessDate": "2025-03-31",
+        "units_sold": 0,
+        "revenue_incl_vat": 0,
+        "cost_ex_vat": 0
+      },
       {
         "itemSku": "SKU-00169",
         "businessDate": "2025-03-16",

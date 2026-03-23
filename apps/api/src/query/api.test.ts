@@ -201,6 +201,92 @@ describe("query api", () => {
     );
     expect(scheduledDatasets).toStrictEqual(["dataset_1"]);
   });
+
+  it("passes pipeline column descriptions to the SQL generator when available", async () => {
+    const repository = seedRepository();
+    repository.saveImportProcessingState("dataset_1", {
+      cleanDatabase: {
+        builtAt: "2026-03-18T11:00:30.000Z",
+        cleanDatabaseId: "clean_db_1",
+        databaseFilePath: ".data/test-clean.sqlite",
+      },
+      cleanDatabaseStatus: "succeeded",
+      lastPipelineError: null,
+      nextRetryAt: null,
+      pipelineRetryCount: 0,
+      pipelineRun: null,
+      pipelineStatus: "succeeded",
+      pipelineVersion: {
+        analysisJson: {
+          columnDescriptions: [
+            {
+              columnName: "units_gross",
+              description: "Gross units excluding return rows.",
+              tableName: "daily_sales",
+            },
+          ],
+          findings: [],
+          sourceDatasetId: "dataset_1",
+          summary: "Synthetic test pipeline metadata",
+        },
+        createdAt: "2026-03-18T11:00:20.000Z",
+        createdBy: "codex_cli",
+        pipelineId: "pipeline_1",
+        pipelineVersionId: "pipeline_version_1",
+        promptMarkdown: "prompt",
+        sourceDatasetId: "dataset_1",
+        sqlText: "SELECT 1;",
+        summaryMarkdown: "summary",
+      },
+    });
+
+    let capturedColumnDescriptions:
+      | Array<{ columnName: string; description: string; tableName: string }>
+      | undefined;
+
+    const queryApi = createQueryApi({
+      queryExecutor: {
+        executeQuery() {
+          return Promise.resolve({
+            columnNames: ["ok"],
+            rows: [[1]],
+          });
+        },
+      },
+      queryGenerator: {
+        generateSql(options) {
+          capturedColumnDescriptions = options.columnDescriptions;
+          return Promise.resolve({
+            model: "gpt-5-mini",
+            prompt: "query prompt",
+            sqlText: "SELECT 1 AS ok;",
+          });
+        },
+      },
+      repository,
+      sqlValidator: {
+        validate() {
+          return {
+            errors: [],
+            isValid: true,
+          };
+        },
+      },
+    });
+
+    await queryApi.runNaturalLanguageQuery({
+      prompt: "Show daily gross units",
+      sourceDatasetId: "dataset_1",
+    });
+
+    expect(capturedColumnDescriptions).toStrictEqual([
+      {
+        columnName: "units_gross",
+        description: "Gross units excluding return rows.",
+        tableName: "daily_sales",
+      },
+    ]);
+  });
 });
 
 function seedRepository(): InMemorySourceDatasetRepository {
