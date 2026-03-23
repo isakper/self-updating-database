@@ -435,6 +435,7 @@ function createQueryExecutionLog(options: {
 
   return {
     cleanDatabaseId: options.cleanDatabaseId,
+    isBenchmarkLog: false,
     errorMessage: options.errorMessage ?? null,
     executionFinishedAt: options.executionFinishedAt?.toISOString() ?? null,
     executionLatencyMs:

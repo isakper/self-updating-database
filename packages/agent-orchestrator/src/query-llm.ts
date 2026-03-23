@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 
-import initSqlJs, { type Database } from "sql.js";
+import initSqlJs, { type Database, type SqlValue } from "sql.js";
 
 import type {
   OptimizationHint,
@@ -36,6 +36,7 @@ export interface OpenAiSqlQueryGeneratorOptions {
 
 interface CleanDatabaseContext {
   schemaDescription: string;
+  tableProfilesDescription: string;
 }
 
 export function createOpenAiSqlQueryGenerator(
@@ -131,6 +132,10 @@ export async function inspectCleanDatabase(
 
     return {
       schemaDescription: schemaBlocks.join("\n\n"),
+      tableProfilesDescription: buildTableProfilesDescription(
+        database,
+        tableRows
+      ),
     };
   } finally {
     database.close();
@@ -171,6 +176,9 @@ ${options.prompt}
 
 Clean database schema:
 ${databaseContext.schemaDescription}
+
+Table profiles:
+${databaseContext.tableProfilesDescription}
 ${columnDescriptionsSection}
 ${optimizationHints}
 
@@ -189,8 +197,250 @@ Rules:
 - For gross revenue or gross sales questions, treat gross as pre-return sales and exclude returned rows when a return flag exists.
 - For net revenue or net sales questions, include return impact instead of excluding returned rows.
 - If a return-flag column exists, use schema-appropriate values (for example, is_return = 0/1 or returnFlag = 'No'/'Yes') to model returns correctly.
+- Do not synthesize missing date rows unless the user explicitly asks to include zero-sales/missing-date rows.
 - Prefer explicit column lists instead of SELECT *.
 - Prefer LIMIT 200 for detail-row queries unless the user clearly asked for all rows.`;
+}
+
+function buildTableProfilesDescription(
+  database: Database,
+  tableRows: SqlValue[][]
+): string {
+  const blocks: string[] = [];
+
+  for (const row of tableRows) {
+    const [nameValue, typeValue] = row;
+    const tableName = String(nameValue);
+    const objectType = String(typeValue).toUpperCase();
+    const escapedTableName = tableName.replaceAll('"', '""');
+
+    const rowCount = readSingleNumber(
+      database,
+      `SELECT COUNT(*) FROM "${escapedTableName}"`
+    );
+    const columns = readColumnNames(database, escapedTableName);
+
+    const keyCandidates = inferKeyCandidates({
+      columns,
+      database,
+      escapedTableName,
+      rowCount,
+    });
+    const coverageNotes = inferCoverageNotes({
+      columns,
+      database,
+      escapedTableName,
+      rowCount,
+    });
+
+    blocks.push(
+      [
+        `${objectType} ${tableName}`,
+        `- row_count: ${rowCount}`,
+        `- key_candidates: ${
+          keyCandidates.length > 0 ? keyCandidates.join(" | ") : "unknown"
+        }`,
+        `- coverage_notes: ${
+          coverageNotes.length > 0 ? coverageNotes.join(" ; ") : "none"
+        }`,
+      ].join("\n")
+    );
+  }
+
+  return blocks.join("\n\n");
+}
+
+function readColumnNames(database: Database, escapedTableName: string): string[] {
+  const [result] = database.exec(`PRAGMA table_info("${escapedTableName}")`);
+  if (!result) {
+    return [];
+  }
+
+  return result.values
+    .map((row) => String(row[1] ?? "").trim())
+    .filter((columnName) => columnName.length > 0);
+}
+
+function inferKeyCandidates(options: {
+  columns: string[];
+  database: Database;
+  escapedTableName: string;
+  rowCount: number;
+}): string[] {
+  if (options.rowCount <= 0 || options.columns.length === 0) {
+    return [];
+  }
+
+  const idLikeColumns = options.columns.filter((columnName) =>
+    /(^id$|_id$|sku|date|timestamp|key$)/i.test(columnName)
+  );
+  const prioritizedColumns = dedupeStrings([
+    ...idLikeColumns,
+    ...options.columns.slice(0, 8),
+  ]);
+
+  const singles = prioritizedColumns.filter((columnName) =>
+    isUniqueColumn({
+      columnName,
+      database: options.database,
+      escapedTableName: options.escapedTableName,
+      rowCount: options.rowCount,
+    })
+  );
+  if (singles.length > 0) {
+    return singles.map((columnName) => columnName);
+  }
+
+  const pairs: string[] = [];
+  for (let index = 0; index < prioritizedColumns.length; index += 1) {
+    for (
+      let innerIndex = index + 1;
+      innerIndex < prioritizedColumns.length;
+      innerIndex += 1
+    ) {
+      const pair = [
+        prioritizedColumns[index] ?? "",
+        prioritizedColumns[innerIndex] ?? "",
+      ].filter(Boolean);
+      if (pair.length !== 2) {
+        continue;
+      }
+
+      if (
+        isUniqueColumnSet({
+          columnNames: pair,
+          database: options.database,
+          escapedTableName: options.escapedTableName,
+          rowCount: options.rowCount,
+        })
+      ) {
+        pairs.push(pair.join(", "));
+      }
+      if (pairs.length >= 3) {
+        return pairs;
+      }
+    }
+  }
+
+  return pairs;
+}
+
+function inferCoverageNotes(options: {
+  columns: string[];
+  database: Database;
+  escapedTableName: string;
+  rowCount: number;
+}): string[] {
+  const notes: string[] = [];
+  if (options.rowCount <= 0) {
+    return notes;
+  }
+
+  const dateColumns = options.columns.filter((columnName) =>
+    /(date|day|timestamp)/i.test(columnName)
+  );
+  if (dateColumns.length === 0) {
+    return notes;
+  }
+
+  for (const dateColumn of dateColumns.slice(0, 2)) {
+    const escapedDateColumn = escapeIdentifier(dateColumn);
+    const distinctDates = readSingleNumber(
+      options.database,
+      `SELECT COUNT(DISTINCT ${escapedDateColumn}) FROM "${options.escapedTableName}" WHERE ${escapedDateColumn} IS NOT NULL`
+    );
+    if (distinctDates <= 0) {
+      continue;
+    }
+
+    const nonDateColumn = options.columns.find(
+      (columnName) =>
+        columnName !== dateColumn && /(_id$|sku|store|item|product|key$)/i.test(columnName)
+    );
+    if (!nonDateColumn) {
+      continue;
+    }
+
+    const escapedEntityColumn = escapeIdentifier(nonDateColumn);
+    const distinctEntities = readSingleNumber(
+      options.database,
+      `SELECT COUNT(DISTINCT ${escapedEntityColumn}) FROM "${options.escapedTableName}" WHERE ${escapedEntityColumn} IS NOT NULL`
+    );
+    if (distinctEntities <= 0) {
+      continue;
+    }
+
+    const potentialDenseRows = distinctDates * distinctEntities;
+    if (potentialDenseRows <= 0) {
+      continue;
+    }
+
+    const density = options.rowCount / potentialDenseRows;
+    if (density < 0.95) {
+      notes.push(
+        `sparse ${nonDateColumn} x ${dateColumn} coverage (density=${density.toFixed(3)})`
+      );
+    } else {
+      notes.push(
+        `near-dense ${nonDateColumn} x ${dateColumn} coverage (density=${density.toFixed(3)})`
+      );
+    }
+  }
+
+  return dedupeStrings(notes);
+}
+
+function isUniqueColumn(options: {
+  columnName: string;
+  database: Database;
+  escapedTableName: string;
+  rowCount: number;
+}): boolean {
+  return isUniqueColumnSet({
+    columnNames: [options.columnName],
+    database: options.database,
+    escapedTableName: options.escapedTableName,
+    rowCount: options.rowCount,
+  });
+}
+
+function isUniqueColumnSet(options: {
+  columnNames: string[];
+  database: Database;
+  escapedTableName: string;
+  rowCount: number;
+}): boolean {
+  if (options.columnNames.length === 0) {
+    return false;
+  }
+
+  const distinctExpression = options.columnNames
+    .map((columnName) => `COALESCE(CAST(${escapeIdentifier(columnName)} AS TEXT), '<NULL>')`)
+    .join(` || '¦' || `);
+  const query = `SELECT COUNT(DISTINCT ${distinctExpression}) FROM "${options.escapedTableName}"`;
+  const distinctCount = readSingleNumber(options.database, query);
+  return distinctCount === options.rowCount;
+}
+
+function readSingleNumber(database: Database, sqlText: string): number {
+  const [result] = database.exec(sqlText);
+  const value = result?.values?.[0]?.[0];
+  if (typeof value === "number") {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function escapeIdentifier(identifier: string): string {
+  return `"${identifier.replaceAll('"', '""')}"`;
+}
+
+function dedupeStrings(values: string[]): string[] {
+  return [...new Set(values)];
 }
 
 function readSampleRows(

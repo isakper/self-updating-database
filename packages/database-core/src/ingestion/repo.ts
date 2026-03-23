@@ -17,6 +17,9 @@ export interface SourceDatasetRepository {
 }
 
 export interface IngestionRepository extends SourceDatasetRepository {
+  getPipelineVersionById(
+    pipelineVersionId: string
+  ): PipelineVersionRecord | undefined;
   listActiveOptimizationHints(sourceDatasetId: string): OptimizationHint[];
   listCodexRunEvents(sourceDatasetId: string, limit?: number): CodexRunEvent[];
   getImportProcessingState(
@@ -67,6 +70,7 @@ export class InMemorySourceDatasetRepository implements IngestionRepository {
   readonly #queryLogs = new Map<string, QueryExecutionLog[]>();
   readonly #pipelineRuns = new Map<string, PipelineRunRecord>();
   readonly #pipelineVersions = new Map<string, PipelineVersionRecord>();
+  readonly #pipelineVersionsById = new Map<string, PipelineVersionRecord>();
 
   save(dataset: SourceDataset): void {
     this.#datasets.set(dataset.id, dataset);
@@ -95,6 +99,13 @@ export class InMemorySourceDatasetRepository implements IngestionRepository {
 
   savePipelineVersion(versionRecord: PipelineVersionRecord): void {
     this.#pipelineVersions.set(versionRecord.sourceDatasetId, versionRecord);
+    this.#pipelineVersionsById.set(versionRecord.pipelineVersionId, versionRecord);
+  }
+
+  getPipelineVersionById(
+    pipelineVersionId: string
+  ): PipelineVersionRecord | undefined {
+    return this.#pipelineVersionsById.get(pipelineVersionId);
   }
 
   getLatestPipelineVersion(

@@ -98,6 +98,7 @@ describe("SqliteSourceDatasetRepository", () => {
 
     const queryLog: QueryExecutionLog = {
       cleanDatabaseId: "clean_db_1",
+      isBenchmarkLog: false,
       errorMessage: null,
       executionFinishedAt: "2026-03-18T00:00:02.000Z",
       executionLatencyMs: 200,

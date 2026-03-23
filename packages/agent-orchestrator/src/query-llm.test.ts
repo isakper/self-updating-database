@@ -38,6 +38,8 @@ describe("buildSqlGenerationPrompt", () => {
       {
         schemaDescription:
           "TABLE orders\nCREATE TABLE orders(order_id, amount, region)\nSample rows: []",
+        tableProfilesDescription:
+          "TABLE orders\n- row_count: 0\n- key_candidates: order_id\n- coverage_notes: none",
       }
     );
 
@@ -45,6 +47,8 @@ describe("buildSqlGenerationPrompt", () => {
     expect(prompt).toContain("User question:");
     expect(prompt).toContain("Return only SQL.");
     expect(prompt).toContain("TABLE orders");
+    expect(prompt).toContain("Table profiles:");
+    expect(prompt).toContain("key_candidates:");
     expect(prompt).toContain("Optimization hints:");
     expect(prompt).toContain("agg_orders_by_region");
     expect(prompt).toContain("Column descriptions:");

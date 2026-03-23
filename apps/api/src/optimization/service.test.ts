@@ -1,5 +1,6 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -195,6 +196,317 @@ describe("createQueryLearningLoop", () => {
     expect(afterState?.cleanDatabase).toStrictEqual(beforeState?.cleanDatabase);
     expect(afterState?.pipelineVersion).toStrictEqual(
       beforeState?.pipelineVersion
+    );
+  });
+
+  it("fails and does not apply an optimized pipeline when historical log parity changes", async () => {
+    const repository = createRepository();
+    seedQueryLogs(repository);
+    const tempDir = resolve(
+      join(tmpdir(), `opt-parity-${Math.random().toString(36).slice(2, 10)}`)
+    );
+    const baseDatabasePath = join(tempDir, "base.sqlite");
+
+    mkdirSync(tempDir, { recursive: true });
+    writeFileSync(baseDatabasePath, "base-db", "utf8");
+
+    const currentState = repository.getImportProcessingState("dataset_1");
+    if (!currentState?.cleanDatabase) {
+      throw new Error("Expected initial clean database state.");
+    }
+    repository.saveImportProcessingState("dataset_1", {
+      ...currentState,
+      cleanDatabase: {
+        ...currentState.cleanDatabase,
+        databaseFilePath: baseDatabasePath,
+      },
+    });
+
+    const loop = createQueryLearningLoop({
+      cleanDatabaseBuilder: {
+        buildCleanDatabase(options) {
+          writeFileSync(options.cleanDatabasePath, "candidate-db", "utf8");
+          return Promise.resolve({
+            builtAt: options.builtAt,
+            cleanDatabaseId: options.cleanDatabaseId,
+            databaseFilePath: options.cleanDatabasePath,
+          });
+        },
+      },
+      cleanDatabaseDirectoryPath: ".data/test-clean-databases",
+      codexOptimizationGenerator: {
+        generateOptimizationArtifacts(options) {
+          return Promise.resolve({
+            analysisJson: {
+              findings: [],
+              sourceDatasetId: options.sourceDatasetId,
+              summary: "Try a revised pipeline.",
+            },
+            decision: "pipeline_revision",
+            optimizationHints: [],
+            prompt: "prompt",
+            sqlText:
+              "DROP TABLE IF EXISTS clean_orders; CREATE TABLE clean_orders AS SELECT 1 AS ok;",
+            summaryMarkdown: "Pipeline revised.",
+            workspacePath: "/tmp/fake",
+          });
+        },
+      },
+      queryGenerator: {
+        generateSql(options) {
+          return Promise.resolve({
+            model: "test-model",
+            prompt: options.prompt,
+            sqlText: "SELECT 1 AS value",
+          });
+        },
+      },
+      queryExecutor: {
+        executeQuery(options) {
+          if (options.cleanDatabasePath === baseDatabasePath) {
+            return Promise.resolve({
+              columnNames: ["value"],
+              rows: [[1]],
+            });
+          }
+          return Promise.resolve({
+            columnNames: ["value"],
+            rows: [[2]],
+          });
+        },
+      },
+      repository,
+      sourceDatabasePath: ".data/source.sqlite",
+      sqlValidator: {
+        validate: validatePipelineSql,
+      },
+    });
+
+    const beforeState = repository.getImportProcessingState("dataset_1");
+    loop.schedule("dataset_1");
+    await loop.drain();
+
+    const afterState = repository.getImportProcessingState("dataset_1");
+    const revision = repository.listOptimizationRevisions("dataset_1")[0];
+
+    expect(revision?.status).toBe("failed");
+    expect(revision?.errorMessage).toContain("Optimization parity check failed");
+    expect(afterState?.cleanDatabase).toStrictEqual(beforeState?.cleanDatabase);
+    expect(afterState?.pipelineVersion).toStrictEqual(
+      beforeState?.pipelineVersion
+    );
+  });
+
+  it("skips full parity comparison when result size exceeds limits", async () => {
+    const repository = createRepository();
+    seedQueryLogs(repository);
+    const tempDir = resolve(
+      join(
+        tmpdir(),
+        `opt-parity-skip-large-${Math.random().toString(36).slice(2, 10)}`
+      )
+    );
+    const baseDatabasePath = join(tempDir, "base.sqlite");
+
+    mkdirSync(tempDir, { recursive: true });
+    writeFileSync(baseDatabasePath, "base-db", "utf8");
+
+    const currentState = repository.getImportProcessingState("dataset_1");
+    if (!currentState?.cleanDatabase) {
+      throw new Error("Expected initial clean database state.");
+    }
+    repository.saveImportProcessingState("dataset_1", {
+      ...currentState,
+      cleanDatabase: {
+        ...currentState.cleanDatabase,
+        databaseFilePath: baseDatabasePath,
+      },
+    });
+
+    const loop = createQueryLearningLoop({
+      cleanDatabaseBuilder: {
+        buildCleanDatabase(options) {
+          writeFileSync(options.cleanDatabasePath, "candidate-db", "utf8");
+          return Promise.resolve({
+            builtAt: options.builtAt,
+            cleanDatabaseId: options.cleanDatabaseId,
+            databaseFilePath: options.cleanDatabasePath,
+          });
+        },
+      },
+      cleanDatabaseDirectoryPath: ".data/test-clean-databases",
+      codexOptimizationGenerator: {
+        generateOptimizationArtifacts(options) {
+          return Promise.resolve({
+            analysisJson: {
+              findings: [],
+              sourceDatasetId: options.sourceDatasetId,
+              summary: "Try a revised pipeline.",
+            },
+            decision: "pipeline_revision",
+            optimizationHints: [],
+            prompt: "prompt",
+            sqlText:
+              "DROP TABLE IF EXISTS clean_orders; CREATE TABLE clean_orders AS SELECT 1 AS ok;",
+            summaryMarkdown: "Pipeline revised.",
+            workspacePath: "/tmp/fake",
+          });
+        },
+      },
+      optimizationValidationFullResultMaxRows: 1,
+      queryGenerator: {
+        generateSql(options) {
+          return Promise.resolve({
+            model: "test-model",
+            prompt: options.prompt,
+            sqlText: "SELECT 1 AS value",
+          });
+        },
+      },
+      queryExecutor: {
+        executeQuery(options) {
+          if (options.cleanDatabasePath === baseDatabasePath) {
+            return Promise.resolve({
+              columnNames: ["value"],
+              rows: [[1]],
+            });
+          }
+          return Promise.resolve({
+            columnNames: ["value"],
+            rows: [[2]],
+          });
+        },
+      },
+      repository,
+      sourceDatabasePath: ".data/source.sqlite",
+      sqlValidator: {
+        validate: validatePipelineSql,
+      },
+    });
+
+    const beforeState = repository.getImportProcessingState("dataset_1");
+    loop.schedule("dataset_1");
+    await loop.drain();
+
+    const afterState = repository.getImportProcessingState("dataset_1");
+    const revision = repository.listOptimizationRevisions("dataset_1")[0];
+
+    expect(revision?.status).toBe("succeeded");
+    expect(revision?.decision).toBe("pipeline_revision");
+    expect(afterState?.cleanDatabase).not.toStrictEqual(beforeState?.cleanDatabase);
+    expect(afterState?.pipelineVersion).not.toStrictEqual(
+      beforeState?.pipelineVersion
+    );
+  });
+
+  it("treats parity as compatible when row content matches despite column name/order differences", async () => {
+    const repository = createRepository();
+    seedQueryLogs(repository);
+    const tempDir = resolve(
+      join(
+        tmpdir(),
+        `opt-parity-content-${Math.random().toString(36).slice(2, 10)}`
+      )
+    );
+    const baseDatabasePath = join(tempDir, "base.sqlite");
+
+    mkdirSync(tempDir, { recursive: true });
+    writeFileSync(baseDatabasePath, "base-db", "utf8");
+
+    const currentState = repository.getImportProcessingState("dataset_1");
+    if (!currentState?.cleanDatabase) {
+      throw new Error("Expected initial clean database state.");
+    }
+    repository.saveImportProcessingState("dataset_1", {
+      ...currentState,
+      cleanDatabase: {
+        ...currentState.cleanDatabase,
+        databaseFilePath: baseDatabasePath,
+      },
+    });
+
+    const seedWithSample = createQueryLog({
+      executionLatencyMs: 300,
+      prompt: "Show revenue by region with sample",
+      queryLogId: "query_log_sample",
+      sqlText:
+        "SELECT region, SUM(amount) AS total_amount FROM clean_orders GROUP BY region;",
+      startedAt: "2026-03-18T10:06:00.000Z",
+    });
+    seedWithSample.resultRowsSample = [
+      ["North", 100],
+      ["South", 50],
+    ];
+    repository.saveQueryExecutionLog(seedWithSample);
+
+    const loop = createQueryLearningLoop({
+      cleanDatabaseBuilder: {
+        buildCleanDatabase(options) {
+          writeFileSync(options.cleanDatabasePath, "candidate-db", "utf8");
+          return Promise.resolve({
+            builtAt: options.builtAt,
+            cleanDatabaseId: options.cleanDatabaseId,
+            databaseFilePath: options.cleanDatabasePath,
+          });
+        },
+      },
+      cleanDatabaseDirectoryPath: ".data/test-clean-databases",
+      codexOptimizationGenerator: {
+        generateOptimizationArtifacts(options) {
+          return Promise.resolve({
+            analysisJson: {
+              findings: [],
+              sourceDatasetId: options.sourceDatasetId,
+              summary: "Try a revised pipeline.",
+            },
+            decision: "pipeline_revision",
+            optimizationHints: [],
+            prompt: "prompt",
+            sqlText:
+              "DROP TABLE IF EXISTS clean_orders; CREATE TABLE clean_orders AS SELECT 1 AS ok;",
+            summaryMarkdown: "Pipeline revised.",
+            workspacePath: "/tmp/fake",
+          });
+        },
+      },
+      queryGenerator: {
+        generateSql(options) {
+          return Promise.resolve({
+            model: "test-model",
+            prompt: options.prompt,
+            sqlText: "SELECT region_alias, total_amount_alias FROM agg",
+          });
+        },
+      },
+      queryExecutor: {
+        executeQuery() {
+          return Promise.resolve({
+            columnNames: ["total_amount_alias", "region_alias"],
+            rows: [
+              [50, "South"],
+              [100, "North"],
+            ],
+          });
+        },
+      },
+      repository,
+      sourceDatabasePath: ".data/source.sqlite",
+      sqlValidator: {
+        validate: validatePipelineSql,
+      },
+    });
+
+    const beforeState = repository.getImportProcessingState("dataset_1");
+    loop.schedule("dataset_1");
+    await loop.drain();
+
+    const afterState = repository.getImportProcessingState("dataset_1");
+    const revision = repository.listOptimizationRevisions("dataset_1")[0];
+
+    expect(revision?.status).toBe("succeeded");
+    expect(revision?.decision).toBe("pipeline_revision");
+    expect(afterState?.cleanDatabase?.cleanDatabaseId).not.toBe(
+      beforeState?.cleanDatabase?.cleanDatabaseId
     );
   });
 
@@ -491,6 +803,83 @@ describe("createQueryLearningLoop", () => {
     const revisions = repository.listOptimizationRevisions("dataset_1");
     expect(revisions[0]?.status).toBe("succeeded");
     expect(revisions[1]?.status).toBe("failed");
+  });
+
+  it("retries by editing the latest failed candidate pipeline SQL when available", async () => {
+    const repository = createRepository();
+    seedQueryLogs(repository);
+    const candidateSql =
+      "DROP TABLE IF EXISTS clean_orders; CREATE TABLE clean_orders AS SELECT 2 AS ok;";
+    const seenPipelineSqls: string[] = [];
+    const seenPipelineSources: Array<string | undefined> = [];
+    let attempt = 0;
+    const loop = createQueryLearningLoop({
+      cleanDatabaseBuilder: {
+        buildCleanDatabase: () =>
+          Promise.reject(new Error("candidate build failed")),
+      },
+      cleanDatabaseDirectoryPath: ".data/test-clean-databases",
+      codexOptimizationGenerator: {
+        generateOptimizationArtifacts(options) {
+          attempt += 1;
+          seenPipelineSqls.push(options.currentPipelineSql);
+          seenPipelineSources.push(options.pipelineSqlSourceLabel);
+
+          if (attempt === 1) {
+            return Promise.resolve({
+              analysisJson: {
+                findings: [],
+                sourceDatasetId: options.sourceDatasetId,
+                summary: "Try candidate pipeline.",
+              },
+              decision: "pipeline_revision",
+              optimizationHints: [],
+              prompt: "prompt",
+              sqlText: candidateSql,
+              summaryMarkdown: "Candidate pipeline.",
+              workspacePath: "/tmp/fake",
+            });
+          }
+
+          return Promise.resolve({
+            analysisJson: {
+              findings: [],
+              sourceDatasetId: options.sourceDatasetId,
+              summary: "No change.",
+            },
+            decision: "no_change",
+            optimizationHints: [],
+            prompt: "prompt",
+            sqlText: options.currentPipelineSql,
+            summaryMarkdown: "No change.",
+            workspacePath: "/tmp/fake",
+          });
+        },
+      },
+      optimizationRetryBackoffMs: 60_000,
+      repository,
+      sourceDatabasePath: ".data/source.sqlite",
+      sqlValidator: {
+        validate: validatePipelineSql,
+      },
+    });
+
+    loop.schedule("dataset_1");
+    await loop.drain();
+
+    const failedRevision = repository.listOptimizationRevisions("dataset_1")[0];
+    expect(failedRevision?.status).toBe("failed");
+    expect(failedRevision?.candidatePipelineVersionId).toBeTruthy();
+
+    const retryResult = loop.retryLatestFailedRevision("dataset_1");
+    expect(retryResult.accepted).toBe(true);
+
+    await loop.drain();
+
+    expect(seenPipelineSqls).toHaveLength(2);
+    expect(seenPipelineSqls[0]).toBe(CURRENT_PIPELINE.sqlText);
+    expect(seenPipelineSqls[1]).toBe(candidateSql);
+    expect(seenPipelineSources[1]).toContain("failed candidate pipeline");
   });
 });
 

@@ -106,6 +106,7 @@ export interface QueryExecutionResult {
 
 export interface QueryExecutionLog {
   cleanDatabaseId: string;
+  isBenchmarkLog?: boolean;
   errorMessage: string | null;
   executionFinishedAt: string | null;
   executionLatencyMs: number | null;

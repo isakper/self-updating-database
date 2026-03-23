@@ -81,4 +81,21 @@ describe("parseCliArgs", () => {
     expect(parsed.options.apiBaseUrl).toBe("http://127.0.0.1:4010");
     expect(parsed.command).toEqual({ kind: "dataset_list" });
   });
+
+  it("parses optimization run with pinned base pipeline version", () => {
+    const parsed = parseCliArgs([
+      "optimization",
+      "run",
+      "dataset_9",
+      "--base-pipeline-version-id",
+      "pipeline_version_123",
+    ]);
+
+    expect(parsed.error).toBeUndefined();
+    expect(parsed.command).toEqual({
+      basePipelineVersionId: "pipeline_version_123",
+      datasetId: "dataset_9",
+      kind: "optimization_run",
+    });
+  });
 });

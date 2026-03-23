@@ -20,8 +20,11 @@ export interface GenerateOptimizationArtifactsOptions {
   candidateSet: OptimizationCandidateSet;
   cleanDatabasePath: string;
   currentPipelineSql: string;
+  diagnosticContextMarkdown?: string;
   onRunEvent?: (runEvent: Pick<CodexRunEvent, "message" | "stream">) => void;
+  pipelineSqlSourceLabel?: string;
   sourceDatasetId: string;
+  validationEvidenceJson?: string;
 }
 
 export interface GeneratedOptimizationArtifacts {
@@ -71,6 +74,14 @@ export function createCodexCliOptimizationGenerator(
         candidateSet: input.candidateSet,
         cleanDatabaseSchemaDescription: schemaContext.schemaDescription,
         currentPipelineSql: input.currentPipelineSql,
+        ...(input.diagnosticContextMarkdown
+          ? { diagnosticContextMarkdown: input.diagnosticContextMarkdown }
+          : {}),
+        hasValidationEvidenceArtifact:
+          typeof input.validationEvidenceJson === "string",
+        ...(input.pipelineSqlSourceLabel
+          ? { pipelineSqlSourceLabel: input.pipelineSqlSourceLabel }
+          : {}),
         sourceDatasetId: input.sourceDatasetId,
       });
 
@@ -89,6 +100,15 @@ export function createCodexCliOptimizationGenerator(
           input.currentPipelineSql,
           "utf8"
         ),
+        ...(typeof input.validationEvidenceJson === "string"
+          ? [
+              writeFile(
+                join(workspacePath, "validation-evidence.json"),
+                input.validationEvidenceJson,
+                "utf8"
+              ),
+            ]
+          : []),
       ]);
 
       try {
@@ -224,6 +244,9 @@ export function buildCodexOptimizationPrompt(options: {
   candidateSet: OptimizationCandidateSet;
   cleanDatabaseSchemaDescription: string;
   currentPipelineSql: string;
+  diagnosticContextMarkdown?: string;
+  hasValidationEvidenceArtifact?: boolean;
+  pipelineSqlSourceLabel?: string;
   sourceDatasetId: string;
 }): string {
   const clusterSummary = options.candidateSet.queryClusters
@@ -243,6 +266,12 @@ export function buildCodexOptimizationPrompt(options: {
 - order by: ${cluster.patternSummary.orderBy.join(", ") || "(none)"}`
     )
     .join("\n\n");
+  const diagnosticContextSection = options.diagnosticContextMarkdown
+    ? `
+
+Previous failed optimization diagnostics:
+${options.diagnosticContextMarkdown}`
+    : "";
 
   return `You are deciding whether to revise a SQL-only transformation pipeline for a self-updating database prototype.
 
@@ -254,6 +283,7 @@ Dataset:
 The workspace contains:
 - candidate-set.json
 - current-pipeline.sql
+${options.hasValidationEvidenceArtifact ? "- validation-evidence.json" : ""}
 
 Current clean database schema:
 ${options.cleanDatabaseSchemaDescription}
@@ -262,11 +292,17 @@ Top repeated query groups for this optimization cycle:
 ${clusterSummary}
 
 Current pipeline SQL:
+${options.pipelineSqlSourceLabel ? `- source: ${options.pipelineSqlSourceLabel}` : ""}
 ${options.currentPipelineSql}
+${diagnosticContextSection}
 
 Your job:
 - decide whether these top repeated query groups justify a structural change to the derived clean database
 - you may decide no change is better
+- before finalizing your decision, use the host-provided validation evidence for repeated-pattern questions (when available in workspace artifacts) and judge whether expected vs candidate answers are semantically equivalent
+- semantic equivalence should tolerate row-order, column-order, and column-name differences
+- if validation evidence is missing or confidence is low, choose no_change
+- exception: if confidence is low specifically because generated SQL in validation evidence references missing/renamed objects (for example return_flag vs is_return), prefer a compatibility-focused pipeline_revision (alias columns/views or naming harmonization) over no_change
 - if a change is worthwhile, you may reshape tables, add helper tables or views, precompute access paths, improve joins, or otherwise revise the derived clean-database design
 - do not mutate the source database
 - do not assume you must add only one aggregate table
@@ -329,7 +365,15 @@ Important:
 - preserve the source-data immutability rule
 - keep the pipeline rerunnable from scratch
 - the runtime allows CREATE INDEX statements on derived clean-database objects
-- do not create indexes on source.* objects`;
+- do not create indexes on source.* objects
+
+Validation evidence:
+- if a host-generated validation artifact is present in the workspace, use it as the source of truth for expected vs generated answer comparison
+- when present, validation-evidence.json contains question-level records for repeated-pattern queries
+- prefer records where fullResultComparison.status is "available", and judge semantic equivalence from full expected rows vs full generated rows
+- if fullResultComparison.status is "skipped", treat that record as not comparable (do not force a mismatch decision from that record)
+- explicitly inspect validation-evidence.json before deciding
+- do not assume direct access to local host API endpoints from within the codex workspace`;
 }
 
 function parseDecisionArtifact(rawJson: string): {

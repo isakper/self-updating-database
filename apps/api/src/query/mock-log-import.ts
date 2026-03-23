@@ -125,6 +125,7 @@ function createImportedQueryLog(options: {
 
   return {
     cleanDatabaseId: options.cleanDatabaseId,
+    isBenchmarkLog: true,
     errorMessage,
     executionFinishedAt,
     executionLatencyMs,

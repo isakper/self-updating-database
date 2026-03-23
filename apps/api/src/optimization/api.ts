@@ -13,7 +13,10 @@ export interface OptimizationInsightsResponse {
 export interface OptimizationApi {
   getInsights(sourceDatasetId: string): OptimizationInsightsResponse;
   retryLatestFailedRevision(sourceDatasetId: string): OptimizationRunResponse;
-  triggerRun(sourceDatasetId: string): OptimizationRunResponse;
+  triggerRun(
+    sourceDatasetId: string,
+    options?: { basePipelineVersionId?: string }
+  ): OptimizationRunResponse;
 }
 
 export interface OptimizationRunResponse {
@@ -43,8 +46,8 @@ export function createOptimizationApi(options: {
         sourceDatasetId
       );
     },
-    triggerRun(sourceDatasetId) {
-      return options.queryLearningLoop.triggerRun(sourceDatasetId);
+    triggerRun(sourceDatasetId, triggerOptions) {
+      return options.queryLearningLoop.triggerRun(sourceDatasetId, triggerOptions);
     },
   };
 }

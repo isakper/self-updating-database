@@ -267,6 +267,11 @@ Cleaning scope:
 - allow high-confidence spelling/value normalization when justified by observed data
 - do not invent new business meaning
 - do not drop rows unless absolutely required and explicitly justified
+- treat cleanup as normalization-only:
+  - do not add or remove tables
+  - do not add or remove columns
+  - do not add or remove rows
+  - allowed: rename columns and normalize/standardize existing cell values
 - preserve numeric precision from source data; do not round monetary or quantity values in the cleaning pipeline
 - optimize for a clean-database schema that is easy for an LLM to understand and query
 - preserve return semantics when return indicators exist (for example, returnFlag or is_return)
@@ -274,7 +279,6 @@ Cleaning scope:
   - gross metrics should represent pre-return amounts
   - net metrics should include return impact
 - prefer a small number of clear, well-named tables over many narrow or redundant tables
-- do not add new tables or columns unless they meaningfully simplify likely queries
 - avoid schema changes that make the database more fragmented or harder for an LLM to navigate
 
 Output contract:
