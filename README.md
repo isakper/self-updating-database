@@ -224,3 +224,9 @@ Question sets: dataset 1 + dataset 2 (40 questions per scenario)
 - Full benchmark JSON: `docs/reports/2026-03-24-eval/sql-benchmark-dataset_ykadj93p-full-deliberate-latest.json`
 - Applied optimized pipeline SQL:
   - `docs/reports/2026-03-24-eval/pipeline_version_5n9pv9xq.sql`
+
+### Conceptual risks to watch
+
+- Query clustering is based on generated SQL structure, so wrong generated SQL can steer optimization in the wrong direction.
+- Optimization can introduce too many helper objects, which may make schema context harder for query generation models to navigate.
+- Parity validation assumes benchmark logs are correct; if logs are wrong or ambiguous, the system can learn and reinforce incorrect behavior.
