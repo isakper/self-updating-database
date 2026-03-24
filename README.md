@@ -66,6 +66,112 @@ Relevant env vars:
 - `OPTIMIZATION_PARITY_MIN_PASS_RATIO` (default `1`; strict `>` comparison, so `0.9` means more than 90% must match)
 - `OPTIMIZATION_PARITY_MAX_ATTEMPTS` (default `3`)
 
+### System diagram
+
+```mermaid
+flowchart LR
+  U([User / CLI]) --> W[/Upload Workbook/]
+  U --> L[/Upload Query Logs/]
+
+  W --> S[(Immutable Source DB\nraw tables)]
+  L --> QL[(Query Log Store)]
+
+  S --> C[[Cleanup Pipeline\nGeneration + Run]]
+  C --> CDB[(Clean DB Revision\nactive baseline)]
+
+  QL --> CL[[Cluster Repeated Questions]]
+  CL --> O{"Optimization Pipeline Generation (Codex/LLM)"}
+  CDB --> O
+
+  O --> OCDB[(Candidate Optimized DB Revision)]
+  QL --> P{{Parity Validation\nCodex/LLM + SQL comparison}}
+  OCDB --> P
+
+  P -->|"> threshold"| A([Apply as Active Optimized Revision])
+  P -->|"<= threshold"| R[[Retry: Update Candidate Pipeline]]
+  R --> O
+
+  D1[/Eval Dataset 1\nrandom questions/]
+  D2[/Eval Dataset 2\nlog-inspired questions/]
+  D1 --> Q
+  D2 --> Q
+
+  U --> Q{{Natural-language Query API\nSQL generation via LLM}}
+  Q --> S1["Scenario 1: Raw DB"]
+  Q --> S2["Scenario 2: Clean DB"]
+  Q --> S3["Scenario 3a: Optimized DB"]
+
+  S1 --> E[[SQL Execution + LLM Evaluation]]
+  S2 --> E
+  S3 --> E
+
+  classDef llm fill:#fff4db,stroke:#b26a00,stroke-width:2px,color:#222;
+  class O,P,Q,E llm;
+```
+
+Scenario mapping: Scenario 1 queries the immutable raw DB, Scenario 2 queries the active clean DB revision, and Scenario 3a queries the active optimized DB revision.
+
+### Node deep dives
+
+#### Cleanup pipeline generation + run
+
+- Purpose: turn messy uploaded sheets into a consistent queryable version.
+- What it changes: naming and formatting consistency (for example column names and categorical values).
+- What it does not change: the source database is immutable, and business meaning should not be rewritten.
+- Precision rule: values are kept at full precision (no rounding in the pipeline).
+- Outcome: a clean database revision becomes the active baseline for querying and later optimization.
+
+#### Cluster repeated questions
+
+- Purpose: identify where users ask the same kind of question repeatedly.
+- How grouping works conceptually: each historical query is reduced to an intent pattern (which entities it touches, how data is filtered, whether it is detail vs aggregate, and how it groups/sorts).
+- Literal values (specific dates, SKUs, store ids) are treated as parameters, so queries with the same structure but different values still land in the same cluster.
+- Ranking logic: clusters are prioritized by repeated usage and total latency impact, so frequent slow patterns rise to the top.
+- Why this matters: optimization focuses on recurring, expensive query patterns instead of one-off queries.
+- Outcome: a short ranked list of high-impact query groups for the optimization cycle.
+
+#### Optimization pipeline generation (Codex/LLM)
+
+- Purpose: propose a better derived schema for the current clean baseline.
+- Inputs: top repeated-question clusters, current pipeline, schema context, and validation feedback from prior attempts.
+- Conceptual strategy: redesign the derived schema so common questions are easier for an LLM to translate into correct SQL on the first try.
+- Typical improvements: clearer table/column naming, reusable rollup objects for common grains, and explicit metric semantics (for example gross vs net and return handling).
+- Decision mode: choose either `pipeline_revision` (make a meaningful structural change) or `no_change` (when extra complexity would not produce clear value).
+- Expected behavior: make meaningful structural improvements when justified, or explicitly keep the pipeline unchanged when not justified.
+- Key guardrail: trivial/no-op proposals are rejected when there is clear optimization demand.
+- Outcome: a candidate optimized pipeline, with an explanation of what changed and optimization hints for downstream SQL generation.
+
+#### Candidate optimized DB revision build
+
+- Purpose: materialize the proposed optimization into a real database revision.
+- Process: validate the candidate pipeline, build a candidate database, and keep it isolated from the active revision.
+- Promotion rule: candidate stays “temporary” until parity checks pass.
+
+#### Parity validation (Codex/LLM + SQL comparison)
+
+- Purpose: verify that optimization does not break answer correctness.
+- Core check: replay historical benchmark questions on the candidate DB and compare outputs to expected answers from the baseline.
+- Comparison style: semantic equivalence (content-level), not brittle formatting-level equality.
+- Pass/fail: candidate must exceed the configured pass ratio threshold.
+- If failing: diagnostics feed back into the next optimization attempt, and the loop retries up to the configured attempt limit.
+
+#### Natural-language query API (SQL generation via LLM)
+
+- Purpose: convert a user’s natural-language question into safe executable SQL.
+- What the model sees: current schema, table profiles, column descriptions, and active optimization hints.
+- Safety checks: generated SQL must be a single read-only query.
+- Execution: run query against the selected scenario database and return rows/timing.
+- Learning loop: query outcomes are logged and reused to improve future optimization cycles.
+
+#### SQL execution + LLM evaluation
+
+- Purpose: compare raw vs clean vs optimized behavior on shared test question sets.
+- What is measured:
+  - correctness (against ground truth)
+  - SQL execution speed (average and median)
+- How correctness is judged: both deterministic checks and LLM-based semantic review.
+- Outputs: CSV/JSON artifacts with generated SQL, expected output, actual output, timing, and evaluation reasoning for auditability.
+
 ### Command reference
 
 ```bash
@@ -95,20 +201,26 @@ Model: `gpt-5.4-mini`
 Reasoning mode: `deliberate`  
 Question sets: dataset 1 + dataset 2 (40 questions per scenario)
 
-### Full eval summary
+### Dataset 1 (random questions) summary
 
-- `scenario_1_raw`: relaxed `34/40`, strict `2/40`, avg SQL `17.79ms`, SQL errors `1`
-- `scenario_2_clean`: relaxed `34/40`, strict `1/40`, avg SQL `11.587ms`, SQL errors `0`
-- `scenario_3a_optimized`: relaxed `35/40`, strict `0/40`, avg SQL `8.87ms`, SQL errors `0`
+- `scenario_1_raw`: Accuracy `15/20`, avg SQL execution time `23.429ms`, median SQL execution time `22.310ms`
+- `scenario_2_clean`: Accuracy `14/20`, avg SQL execution time `19.792ms`, median SQL execution time `18.876ms`
+- `scenario_3a_optimized`: Accuracy `15/20`, avg SQL execution time `16.206ms`, median SQL execution time `15.881ms`
+
+### Dataset 2 (log-inspired questions) summary
+
+- `scenario_1_raw`: Accuracy `19/20`, avg SQL execution time `11.855ms`, median SQL execution time `10.834ms`
+- `scenario_2_clean`: Accuracy `20/20`, avg SQL execution time `3.381ms`, median SQL execution time `3.056ms`
+- `scenario_3a_optimized`: Accuracy `20/20`, avg SQL execution time `1.533ms`, median SQL execution time `1.019ms`
 
 ### Artifacts
 
+- Raw dataset id: `dataset_ykadj93p`
+- Cleaned pipeline version id: `pipeline_version_koulsetl` (clean DB id: `clean_db_2lrjtp54`)
+- Optimized pipeline version id: `pipeline_version_5n9pv9xq` (clean DB id: `clean_db_fyu660ue`)
+- Raw workbook: `apps/web/fixtures/demo-workbooks/retailer-transactions-demo.xlsx`
+- Query logs workbook: `apps/web/fixtures/demo-workbooks/retailer-transactions-demo-query-logs.xlsx`
 - Full benchmark CSV: `docs/reports/2026-03-24-eval/sql-benchmark-dataset_ykadj93p-full-deliberate-latest.csv`
 - Full benchmark JSON: `docs/reports/2026-03-24-eval/sql-benchmark-dataset_ykadj93p-full-deliberate-latest.json`
-- Scenario 3a with reasoning CSV: `docs/reports/2026-03-24-eval/sql-benchmark-dataset_ykadj93p-s3a-gpt54mini-deliberate-with-reasoning.csv`
-- Scenario 3a with reasoning JSON: `docs/reports/2026-03-24-eval/sql-benchmark-dataset_ykadj93p-s3a-gpt54mini-deliberate-with-reasoning.json`
-- One-question cross-scenario check (`q005`) CSV/JSON:
-  - `docs/reports/2026-03-24-eval/q005-all-scenarios.csv`
-  - `docs/reports/2026-03-24-eval/q005-all-scenarios.json`
 - Applied optimized pipeline SQL:
   - `docs/reports/2026-03-24-eval/pipeline_version_5n9pv9xq.sql`
