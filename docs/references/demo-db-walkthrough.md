@@ -4,6 +4,8 @@ Updated: 2026-03-19
 
 Use this when you want to demo the system to technical audiences directly from SQLite.
 
+For a presentation-style talk track with benchmark-backed messaging, see `docs/references/retail-demo-script.md`.
+
 ## High-level flow
 
 ```mermaid
