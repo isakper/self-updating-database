@@ -48,24 +48,6 @@ Pin optimization to a specific active cleaned baseline revision:
 pnpm cli optimization run <datasetId> --base-pipeline-version-id <pipelineVersionId>
 ```
 
-### Optimization flow (current)
-
-Optimization now follows a candidate-first loop driven by repeated query logs:
-
-1. Rank repeated query clusters from query logs.
-2. Generate a materially changed candidate pipeline (no-op candidates are rejected when clusters exist).
-3. Build a candidate clean database from that pipeline.
-4. Run parity against historical benchmark logs.
-5. If pass ratio is not above threshold, regenerate/update the candidate pipeline and retry (up to max attempts).
-6. On success, apply the candidate pipeline/clean DB.
-
-Validation evidence is passed as context to Codex, but acceptance is decided by post-build parity checks on the candidate database.
-
-Relevant env vars:
-
-- `OPTIMIZATION_PARITY_MIN_PASS_RATIO` (default `1`; strict `>` comparison, so `0.9` means more than 90% must match)
-- `OPTIMIZATION_PARITY_MAX_ATTEMPTS` (default `3`)
-
 ### System diagram
 
 ```mermaid
