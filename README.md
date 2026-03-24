@@ -203,15 +203,19 @@ Question sets: dataset 1 + dataset 2 (40 questions per scenario)
 
 ### Dataset 1 (random questions) summary
 
-- `scenario_1_raw`: Accuracy `15/20`, avg SQL execution time `23.429ms`, median SQL execution time `22.310ms`
-- `scenario_2_clean`: Accuracy `14/20`, avg SQL execution time `19.792ms`, median SQL execution time `18.876ms`
-- `scenario_3a_optimized`: Accuracy `15/20`, avg SQL execution time `16.206ms`, median SQL execution time `15.881ms`
+| Scenario                | Accuracy | Avg SQL execution time | Median SQL execution time |
+| ----------------------- | -------- | ---------------------- | ------------------------- |
+| `scenario_1_raw`        | `15/20`  | `23.429ms`             | `22.310ms`                |
+| `scenario_2_clean`      | `14/20`  | `19.792ms`             | `18.876ms`                |
+| `scenario_3a_optimized` | `15/20`  | `16.206ms`             | `15.881ms`                |
 
 ### Dataset 2 (log-inspired questions) summary
 
-- `scenario_1_raw`: Accuracy `19/20`, avg SQL execution time `11.855ms`, median SQL execution time `10.834ms`
-- `scenario_2_clean`: Accuracy `20/20`, avg SQL execution time `3.381ms`, median SQL execution time `3.056ms`
-- `scenario_3a_optimized`: Accuracy `20/20`, avg SQL execution time `1.533ms`, median SQL execution time `1.019ms`
+| Scenario                | Accuracy | Avg SQL execution time | Median SQL execution time |
+| ----------------------- | -------- | ---------------------- | ------------------------- |
+| `scenario_1_raw`        | `19/20`  | `11.855ms`             | `10.834ms`                |
+| `scenario_2_clean`      | `20/20`  | `3.381ms`              | `3.056ms`                 |
+| `scenario_3a_optimized` | `20/20`  | `1.533ms`              | `1.019ms`                 |
 
 ### Artifacts
 
@@ -225,7 +229,7 @@ Question sets: dataset 1 + dataset 2 (40 questions per scenario)
 - Applied optimized pipeline SQL:
   - `docs/reports/2026-03-24-eval/pipeline_version_5n9pv9xq.sql`
 
-### Conceptual risks to watch
+### Next steps / considerations
 
 - Query clustering is based on generated SQL structure, so wrong generated SQL can steer optimization in the wrong direction.
 - Optimization can introduce too many helper objects, which may make schema context harder for query generation models to navigate.
