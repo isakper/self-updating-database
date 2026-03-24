@@ -163,6 +163,9 @@ export function createQueryApi(options: CreateQueryApiOptions): QueryApi {
             });
           },
           prompt: request.prompt,
+          ...(request.reasoningMode
+            ? { reasoningMode: request.reasoningMode }
+            : {}),
           sourceDatasetId: request.sourceDatasetId,
         });
         const generationFinishedAt = now();

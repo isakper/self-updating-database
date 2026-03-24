@@ -287,6 +287,48 @@ describe("query api", () => {
       },
     ]);
   });
+
+  it("forwards deliberate reasoning mode to the SQL generator", async () => {
+    const repository = seedRepository();
+    let capturedReasoningMode: "standard" | "deliberate" | undefined;
+    const queryApi = createQueryApi({
+      queryExecutor: {
+        executeQuery() {
+          return Promise.resolve({
+            columnNames: ["value"],
+            rows: [[1]],
+          });
+        },
+      },
+      queryGenerator: {
+        generateSql(options) {
+          capturedReasoningMode = options.reasoningMode;
+          return Promise.resolve({
+            model: "gpt-5-mini",
+            prompt: options.prompt,
+            sqlText: "SELECT 1 AS value;",
+          });
+        },
+      },
+      repository,
+      sqlValidator: {
+        validate() {
+          return {
+            errors: [],
+            isValid: true,
+          };
+        },
+      },
+    });
+
+    await queryApi.runNaturalLanguageQuery({
+      prompt: "Show top stores",
+      reasoningMode: "deliberate",
+      sourceDatasetId: "dataset_1",
+    });
+
+    expect(capturedReasoningMode).toBe("deliberate");
+  });
 });
 
 function seedRepository(): InMemorySourceDatasetRepository {

@@ -1,7 +1,10 @@
 export interface NaturalLanguageQueryRequest {
   prompt: string;
+  reasoningMode?: QueryReasoningMode;
   sourceDatasetId: string;
 }
+
+export type QueryReasoningMode = "standard" | "deliberate";
 
 export type QueryExecutionStatus = "succeeded" | "failed";
 export type SqlQueryKind = "aggregate" | "detail";
