@@ -5,6 +5,7 @@ import initSqlJs, { type Database, type SqlValue } from "sql.js";
 import type {
   OptimizationHint,
   PipelineColumnDescription,
+  QueryReasoningMode,
 } from "../../shared/src/index.js";
 
 export interface GenerateQueryTextOptions {
@@ -14,6 +15,7 @@ export interface GenerateQueryTextOptions {
   optimizationHints?: OptimizationHint[];
   onDelta?: (chunk: string) => void;
   prompt: string;
+  reasoningMode?: QueryReasoningMode;
   sourceDatasetId: string;
 }
 
@@ -60,15 +62,20 @@ export function createOpenAiSqlQueryGenerator(
         input.cleanDatabasePath
       );
       const prompt = buildSqlGenerationPrompt(input, databaseContext);
+      const reasoningMode = input.reasoningMode ?? "standard";
+      const requestHeaders = {
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json; charset=utf-8",
+      };
       const response = await fetchImplementation(baseUrl, {
         method: "POST",
-        headers: {
-          authorization: `Bearer ${apiKey}`,
-          "content-type": "application/json; charset=utf-8",
-        },
+        headers: requestHeaders,
         body: JSON.stringify({
           input: prompt,
           model,
+          ...(reasoningMode === "deliberate"
+            ? { reasoning: { effort: "high" } }
+            : {}),
           stream: true,
           store: false,
         }),
@@ -164,6 +171,10 @@ export function buildSqlGenerationPrompt(
           )
           .join("\n")}`
       : "";
+  const deliberateReasoningSection =
+    (options.reasoningMode ?? "standard") === "deliberate"
+      ? `\nReasoning mode:\n- deliberate\n- Before writing SQL, reason through these checks internally:\n  1. Match requested metric semantics (gross vs net, return handling).\n  2. Pick the correct grain for the question (detail row, daily aggregate, store/channel rollup, etc.).\n  3. Verify join keys do not multiply rows.\n  4. Confirm return-flag value semantics from observed schema values.\n  5. Re-check requested output columns and ordering.\n- Keep this reasoning internal and output SQL only.`
+      : "";
 
   return `You generate one SQLite SQL query for an analytics database.
 
@@ -181,6 +192,7 @@ Table profiles:
 ${databaseContext.tableProfilesDescription}
 ${columnDescriptionsSection}
 ${optimizationHints}
+${deliberateReasoningSection}
 
 Rules:
 - Return only SQL.
@@ -232,6 +244,11 @@ function buildTableProfilesDescription(
       escapedTableName,
       rowCount,
     });
+    const columnObservations = inferColumnObservations({
+      columns,
+      database,
+      escapedTableName,
+    });
 
     blocks.push(
       [
@@ -242,6 +259,11 @@ function buildTableProfilesDescription(
         }`,
         `- coverage_notes: ${
           coverageNotes.length > 0 ? coverageNotes.join(" ; ") : "none"
+        }`,
+        `- column_observations: ${
+          columnObservations.length > 0
+            ? columnObservations.join(" ; ")
+            : "none"
         }`,
       ].join("\n")
     );
@@ -388,6 +410,77 @@ function inferCoverageNotes(options: {
   }
 
   return dedupeStrings(notes);
+}
+
+function inferColumnObservations(options: {
+  columns: string[];
+  database: Database;
+  escapedTableName: string;
+}): string[] {
+  const prioritizedColumns = dedupeStrings([
+    ...options.columns.filter((columnName) =>
+      /(return|is_|flag|date|sku|store|supplier|payment|channel|tier|category|department|brand)/i.test(
+        columnName
+      )
+    ),
+    ...options.columns.slice(0, 6),
+  ]).slice(0, 10);
+
+  const observations: string[] = [];
+
+  for (const columnName of prioritizedColumns) {
+    const escapedColumnName = escapeIdentifier(columnName);
+    const sampleValues = readDistinctSampleValues({
+      columnName: escapedColumnName,
+      database: options.database,
+      escapedTableName: options.escapedTableName,
+    });
+    if (sampleValues.length === 0) {
+      continue;
+    }
+
+    const inferredKinds = dedupeStrings(
+      sampleValues.map((value) => {
+        if (/^-?\d+(\.\d+)?$/.test(value)) {
+          return "numeric-like";
+        }
+        if (/^(yes|no|true|false|y|n|0|1)$/i.test(value)) {
+          return "boolean-like";
+        }
+        if (/^\d{4}-\d{2}-\d{2}/.test(value)) {
+          return "date-like";
+        }
+        return "text-like";
+      })
+    );
+
+    observations.push(
+      `${columnName} [${inferredKinds.join(", ")}] samples=${sampleValues.join(" | ")}`
+    );
+  }
+
+  return observations;
+}
+
+function readDistinctSampleValues(options: {
+  columnName: string;
+  database: Database;
+  escapedTableName: string;
+}): string[] {
+  const [result] = options.database.exec(
+    `SELECT DISTINCT CAST(${options.columnName} AS TEXT)
+     FROM "${options.escapedTableName}"
+     WHERE ${options.columnName} IS NOT NULL
+     LIMIT 5`
+  );
+
+  if (!result) {
+    return [];
+  }
+
+  return result.values
+    .map((row) => String(row[0] ?? "").trim())
+    .filter((value) => value.length > 0);
 }
 
 function isUniqueColumn(options: {

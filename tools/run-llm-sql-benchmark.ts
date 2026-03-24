@@ -41,6 +41,7 @@ interface BenchmarkResultRow {
   relaxedCorrect: boolean;
   rowEvaluationPromptsJson: string;
   scenario: BenchmarkScenario["key"];
+  sqlReasoning: string;
   sqlGenerationPrompt: string;
   sqlValid: boolean;
   strictCorrect: boolean;
@@ -54,6 +55,8 @@ interface ScriptOptions {
   outputCsvPath: string;
   outputJsonPath: string;
   questionPaths: string[];
+  reasoningMode: "standard" | "deliberate";
+  scenarios: BenchmarkScenario["key"][];
   sourceDatabasePath: string;
 }
 
@@ -164,7 +167,7 @@ try {
     targetPath: rawScenarioPath,
   });
 
-  const scenarios: BenchmarkScenario[] = [
+  const allScenarios: BenchmarkScenario[] = [
     {
       columnDescriptions: [],
       databasePath: rawScenarioPath,
@@ -195,6 +198,9 @@ try {
     },
   ];
 
+  const scenarios = allScenarios.filter((scenario) =>
+    options.scenarios.includes(scenario.key)
+  );
   const benchmarkQuestions = readBenchmarkQuestions(options.questionPaths);
   const benchmarkResults: BenchmarkResultRow[] = [];
 
@@ -209,22 +215,41 @@ try {
         const generationPrompt = buildSqlGenerationPrompt({
           columnDescriptions: scenario.columnDescriptions,
           question: question.question,
+          reasoningMode: options.reasoningMode,
           scenarioDescription: scenario.description,
           schemaDescription: schema.schemaDescription,
+          tableDescriptions: schema.tableDescriptions,
         });
 
         let generatedSql: string | null = null;
+        let sqlReasoning = "";
         let sqlValid = false;
         let executionMs: number | null = null;
         let actualRows: QueryRow[] = [];
         let error: string | null = null;
 
         try {
-          generatedSql = await generateSqlFromOpenAi({
+          const sqlGeneration = await generateSqlFromOpenAi({
             apiKey: process.env.OPENAI_API_KEY,
             model: options.inferenceModel,
             prompt: generationPrompt,
+            reasoningMode: options.reasoningMode,
           });
+          generatedSql = sqlGeneration.sqlText;
+          sqlReasoning = sqlGeneration.sqlReasoning;
+
+          if (
+            options.reasoningMode === "deliberate" &&
+            sqlReasoning.trim().length === 0
+          ) {
+            sqlReasoning = await generateReasoningFromOpenAi({
+              apiKey: process.env.OPENAI_API_KEY,
+              generatedSql,
+              model: options.inferenceModel,
+              question: question.question,
+              scenarioName: scenario.name,
+            });
+          }
 
           const validation = validateQuerySql(generatedSql);
           sqlValid = validation.isValid;
@@ -335,6 +360,7 @@ try {
           relaxedCorrect,
           rowEvaluationPromptsJson: JSON.stringify(rowEvaluationPrompts),
           scenario: scenario.key,
+          sqlReasoning,
           sqlGenerationPrompt: generationPrompt,
           sqlValid,
           strictCorrect,
@@ -359,6 +385,7 @@ try {
         generatedAt: new Date().toISOString(),
         inferenceModel: options.inferenceModel,
         questions: options.questionPaths.map((value) => resolve(value)),
+        reasoningMode: options.reasoningMode,
         scenarios,
         summary,
         results: benchmarkResults,
@@ -376,6 +403,33 @@ try {
   console.log(JSON.stringify(summary, null, 2));
 } finally {
   sourceDatabase.close();
+}
+
+async function generateReasoningFromOpenAi(options: {
+  apiKey: string;
+  generatedSql: string;
+  model: string;
+  question: string;
+  scenarioName: string;
+}): Promise<string> {
+  const prompt = `Explain why this SQL answers the question.
+
+Scenario: ${options.scenarioName}
+Question: ${options.question}
+SQL:
+${options.generatedSql}
+
+Output rules:
+- Return plain text only (no markdown).
+- Max 5 short bullets.
+- Mention table choice, join strategy (if any), and return-handling semantics.`;
+
+  return await callOpenAiText({
+    apiKey: options.apiKey,
+    model: options.model,
+    prompt,
+    reasoningMode: "standard",
+  });
 }
 
 function parseOptions(args: string[]): ScriptOptions {
@@ -447,10 +501,35 @@ function parseOptions(args: string[]): ScriptOptions {
     outputCsvPath,
     outputJsonPath,
     questionPaths,
+    reasoningMode:
+      firstOption(options, "reasoning-mode") === "deliberate"
+        ? "deliberate"
+        : "standard",
+    scenarios: parseScenarioKeys(firstOption(options, "scenarios")),
     sourceDatabasePath: resolve(
       firstOption(options, "source-db") ?? DEFAULT_SOURCE_DATABASE_PATH
     ),
   };
+}
+
+function parseScenarioKeys(
+  candidate: string | null
+): BenchmarkScenario["key"][] {
+  const all: BenchmarkScenario["key"][] = [
+    "scenario_1_raw",
+    "scenario_2_clean",
+    "scenario_3a_optimized",
+  ];
+  if (!candidate) {
+    return all;
+  }
+  const requested = candidate
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part): part is BenchmarkScenario["key"] =>
+      all.includes(part as BenchmarkScenario["key"])
+    );
+  return requested.length > 0 ? requested : all;
 }
 
 function firstOption(
@@ -760,6 +839,7 @@ function readBenchmarkQuestions(
 
 function inspectDatabaseSchema(database: Database): {
   schemaDescription: string;
+  tableDescriptions: string;
 } {
   const objects = executeQuery(
     database,
@@ -778,16 +858,115 @@ function inspectDatabaseSchema(database: Database): {
     return [`${type} ${name}`, createSql].join("\n");
   });
 
+  const tableDescriptions = objects
+    .map((row) => {
+      const name = String(row.name);
+      const escapedName = name.replaceAll('"', '""');
+      const tableInfo = executeQuery(
+        database,
+        `PRAGMA table_info("${escapedName}");`
+      );
+      const columnNames = tableInfo.map((column) => String(column.name));
+      const observedColumns = Array.from(
+        new Set(
+          [
+            ...columnNames.filter((columnName) =>
+              /(return|is_|flag|date|sku|store|supplier|payment|channel|tier|category|department|brand)/i.test(
+                columnName
+              )
+            ),
+            ...columnNames.slice(0, 6),
+          ].slice(0, 10)
+        )
+      );
+      const rowCountRows = executeQuery(
+        database,
+        `SELECT COUNT(*) AS row_count FROM "${escapedName}";`
+      );
+      const rowCount = Number(rowCountRows[0]?.row_count ?? 0);
+      const hasReturnLikeColumn = columnNames.some((columnName) =>
+        /return|is_return/i.test(columnName)
+      );
+      const hasDateLikeColumn = columnNames.some((columnName) =>
+        /date|business_date/i.test(columnName)
+      );
+      const hasRevenueLikeColumn = columnNames.some((columnName) =>
+        /revenue|gross|net_sales|sales/i.test(columnName)
+      );
+
+      const hints = [
+        hasReturnLikeColumn
+          ? "contains return semantics columns"
+          : "no explicit return semantics column detected",
+        hasDateLikeColumn
+          ? "contains date/time columns"
+          : "no obvious date column detected",
+        hasRevenueLikeColumn
+          ? "contains monetary metric columns"
+          : "no obvious monetary metric column detected",
+      ];
+
+      const columnObservations = observedColumns
+        .map((columnName) => {
+          const escapedColumnName = `"${columnName.replaceAll('"', '""')}"`;
+          const sampleRows = executeQuery(
+            database,
+            `SELECT DISTINCT CAST(${escapedColumnName} AS TEXT) AS sample_value
+             FROM "${escapedName}"
+             WHERE ${escapedColumnName} IS NOT NULL
+             LIMIT 5;`
+          );
+          const sampleValues = sampleRows
+            .map((sampleRow) => String(sampleRow.sample_value ?? "").trim())
+            .filter((value) => value.length > 0);
+          const kinds = Array.from(
+            new Set(
+              sampleValues.map((value) => {
+                if (/^-?\\d+(\\.\\d+)?$/.test(value)) {
+                  return "numeric-like";
+                }
+                if (/^(yes|no|true|false|y|n|0|1)$/i.test(value)) {
+                  return "boolean-like";
+                }
+                if (/^\\d{4}-\\d{2}-\\d{2}/.test(value)) {
+                  return "date-like";
+                }
+                return "text-like";
+              })
+            )
+          );
+
+          return `${columnName} [${kinds.join(", ")}] samples=${sampleValues.join(" | ")}`;
+        })
+        .filter((value) => value.length > 0);
+
+      return [
+        `- ${name}`,
+        `  row_count: ${rowCount}`,
+        `  columns: ${columnNames.join(", ")}`,
+        `  hints: ${hints.join("; ")}`,
+        `  column_observations: ${
+          columnObservations.length > 0
+            ? columnObservations.join(" ; ")
+            : "none"
+        }`,
+      ].join("\n");
+    })
+    .join("\n");
+
   return {
     schemaDescription: schemaBlocks.join("\n\n"),
+    tableDescriptions,
   };
 }
 
 function buildSqlGenerationPrompt(options: {
   columnDescriptions: PipelineColumnDescription[];
   question: string;
+  reasoningMode: "standard" | "deliberate";
   scenarioDescription: string;
   schemaDescription: string;
+  tableDescriptions: string;
 }): string {
   const columnDescriptionsSection =
     options.columnDescriptions.length > 0
@@ -799,6 +978,11 @@ function buildSqlGenerationPrompt(options: {
           .join("\n")}`
       : "";
 
+  const reasoningModeSection =
+    options.reasoningMode === "deliberate"
+      ? `\nReasoning mode:\n- deliberate\n- Before writing SQL, reason through this checklist internally:\n  1. identify requested metric semantics (gross vs net; return treatment)\n  2. choose correct table grain and avoid row multiplication in joins\n  3. verify filters align with schema value types (for example return flags)\n  4. ensure selected columns and grouping match the question exactly\n- Keep this reasoning internal; output SQL only.`
+      : "";
+
   return `You generate exactly one SQLite SQL statement.
 
 ${options.scenarioDescription}
@@ -808,7 +992,11 @@ ${options.question}
 
 Available schema:
 ${options.schemaDescription}
+
+Table descriptions:
+${options.tableDescriptions}
 ${columnDescriptionsSection}
+${reasoningModeSection}
 
 Rules:
 - Return SQL only.
@@ -830,8 +1018,63 @@ async function generateSqlFromOpenAi(options: {
   apiKey: string;
   model: string;
   prompt: string;
-}): Promise<string> {
-  return await callOpenAiText(options);
+  reasoningMode: "standard" | "deliberate";
+}): Promise<{ sqlReasoning: string; sqlText: string }> {
+  const reasoningPrompt =
+    options.reasoningMode === "deliberate"
+      ? `${options.prompt}\n\nAdditional output contract:\n- Return JSON only with keys: sql, reasoning.\n- sql: single SQLite SELECT/WITH statement.\n- reasoning: concise explanation (max 5 bullets) of table choice, joins, and return handling.\n- Do not include markdown fences.`
+      : options.prompt;
+  const output = await callOpenAiText({
+    ...options,
+    prompt: reasoningPrompt,
+  });
+
+  if (options.reasoningMode !== "deliberate") {
+    return {
+      sqlReasoning: "",
+      sqlText: output,
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(output) as {
+      reasoning?: unknown;
+      sql?: unknown;
+    };
+    const sqlText =
+      typeof parsed.sql === "string" ? parsed.sql.trim() : output.trim();
+    const sqlReasoning =
+      typeof parsed.reasoning === "string" ? parsed.reasoning.trim() : "";
+    return {
+      sqlReasoning,
+      sqlText,
+    };
+  } catch {
+    const objectMatch = output.match(/\{[\s\S]*\}/);
+    if (objectMatch) {
+      try {
+        const parsed = JSON.parse(objectMatch[0]) as {
+          reasoning?: unknown;
+          sql?: unknown;
+        };
+        return {
+          sqlReasoning:
+            typeof parsed.reasoning === "string" ? parsed.reasoning.trim() : "",
+          sqlText:
+            typeof parsed.sql === "string" ? parsed.sql.trim() : output.trim(),
+        };
+      } catch {
+        return {
+          sqlReasoning: "",
+          sqlText: output,
+        };
+      }
+    }
+    return {
+      sqlReasoning: "",
+      sqlText: output,
+    };
+  }
 }
 
 function extractResponseText(payload: OpenAiResponsesPayload): string {
@@ -1061,24 +1304,28 @@ async function callOpenAiText(options: {
   apiKey: string;
   model: string;
   prompt: string;
+  reasoningMode?: "standard" | "deliberate";
 }): Promise<string> {
   const maxAttempts = 4;
   let lastError: unknown = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
+      const requestHeaders = {
+        authorization: `Bearer ${options.apiKey}`,
+        "content-type": "application/json; charset=utf-8",
+      };
       const response = await fetch("https://api.openai.com/v1/responses", {
         signal: AbortSignal.timeout(60_000),
         body: JSON.stringify({
           input: options.prompt,
           model: options.model,
+          ...(options.reasoningMode === "deliberate"
+            ? { reasoning: { effort: "high" } }
+            : {}),
           store: false,
-          temperature: 0,
         }),
-        headers: {
-          authorization: `Bearer ${options.apiKey}`,
-          "content-type": "application/json; charset=utf-8",
-        },
+        headers: requestHeaders,
         method: "POST",
       });
 
@@ -1391,6 +1638,7 @@ function writeBenchmarkCsv(path: string, rows: BenchmarkResultRow[]): void {
     "expectedRowCount",
     "actualRowCount",
     "error",
+    "sqlReasoning",
     "sqlGenerationPrompt",
     "evaluationPrompt",
     "rowEvaluationPromptsJson",

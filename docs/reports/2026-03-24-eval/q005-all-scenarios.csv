@@ -1,0 +1,432 @@
+datasetFile,questionId,scenario,question,groundTruthSql,generatedSql,expectedRowsJson,actualRowsJson,inferenceModel,evaluationModel,evaluationCorrect,evaluationReason,sqlValid,strictCorrect,relaxedCorrect,llmRowsMatched,llmRowsTotal,llmRowAccuracy,llmAllRowsMatched,executionMs,expectedRowCount,actualRowCount,error,sqlReasoning,sqlGenerationPrompt,evaluationPrompt,rowEvaluationPromptsJson
+/Users/perssonisak/Projects/private/self-updating-database/output/benchmarks/tmp-q005-only.json,q005,scenario_1_raw,Can you show me the top 3 stores by total gross revenue before returns (incl. VAT; exclude returned items)?,"SELECT t.storeId, s.storeName, ROUND(SUM(t.grossSalesInclVat), 2) AS revenue_incl_vat FROM transactions t JOIN stores s ON s.storeId = t.storeId WHERE t.returnFlag = 'No' GROUP BY t.storeId, s.storeName ORDER BY revenue_incl_vat DESC LIMIT 3;","SELECT s.storeId, s.storeName, SUM(t.grossSalesInclVat) AS totalGrossRevenueInclVat FROM transactions t JOIN stores s ON t.storeId = s.storeId WHERE t.returnFlag = 'No' GROUP BY s.storeId, s.storeName ORDER BY totalGrossRevenueInclVat DESC LIMIT 3;","[{""storeId"":""ST001"",""storeName"":""North Harbor Hyper"",""revenue_incl_vat"":15352.52},{""storeId"":""ST002"",""storeName"":""Rainier Express"",""revenue_incl_vat"":14334.34},{""storeId"":""ST007"",""storeName"":""Canyon Plaza Hyper"",""revenue_incl_vat"":14329.05}]","[{""storeId"":""ST001"",""storeName"":""North Harbor Hyper"",""totalGrossRevenueInclVat"":15352.52},{""storeId"":""ST002"",""storeName"":""Rainier Express"",""totalGrossRevenueInclVat"":14334.34},{""storeId"":""ST007"",""storeName"":""Canyon Plaza Hyper"",""totalGrossRevenueInclVat"":14329.05}]",gpt-5.4-mini,gpt-5.4-mini,true,"The result rows and values match the ground truth exactly within tolerance; only the revenue column name differs, which is semantically equivalent.",true,false,true,3,3,1,true,39.848875,3,3,,"- It uses transactions as the main table because gross revenue comes from transaction-level sales amounts.
+- It joins stores to transactions on storeId so each revenue total can be labeled with the correct store name.
+- It filters with t.returnFlag = 'No', which excludes returned items and matches “before returns.”
+- It sums t.grossSalesInclVat, so the total is gross revenue including VAT.
+- It groups by store and orders descending, then LIMIT 3 returns the top 3 stores by total gross revenue.","You generate exactly one SQLite SQL statement.
+
+Scenario 1: original uncleaned workbook schema.
+
+User question:
+Can you show me the top 3 stores by total gross revenue before returns (incl. VAT; exclude returned items)?
+
+Available schema:
+TABLE items
+CREATE TABLE ""items"" (""__source_row_number"" REAL, ""itemSku"" TEXT, ""itemDescription"" TEXT, ""category"" TEXT, ""subcategory"" TEXT, ""brand"" TEXT, ""packSize"" TEXT, ""unitOfMeasure"" TEXT, ""isPrivateLabel"" TEXT, ""discontinuedDate"" TEXT, ""baseVatRate"" REAL, ""costExVat"" REAL, ""shelfLifeDays"" REAL, ""isAgeRestricted"" TEXT, ""storageType"" TEXT, ""countryOfOrigin"" TEXT, ""supplierId"" TEXT, ""supplierName"" TEXT)
+
+TABLE stores
+CREATE TABLE ""stores"" (""__source_row_number"" REAL, ""storeId"" TEXT, ""storeName"" TEXT, ""format"" TEXT, ""region"" TEXT, ""city"" TEXT, ""state"" TEXT, ""squareMeters"" REAL, ""cluster"" TEXT)
+
+TABLE transactions
+CREATE TABLE ""transactions"" (""__source_row_number"" REAL, ""transactionId"" TEXT, ""basketId"" TEXT, ""businessDate"" TEXT, ""transactionTimestamp"" TEXT, ""storeId"" TEXT, ""posTerminalId"" TEXT, ""receiptNumber"" TEXT, ""lineNumber"" REAL, ""cashierId"" TEXT, ""channel"" TEXT, ""paymentMethod"" TEXT, ""loyaltyTier"" TEXT, ""itemSku"" TEXT, ""itemDescription"" TEXT, ""department"" TEXT, ""category"" TEXT, ""brand"" TEXT, ""units"" REAL, ""unitPriceInclVat"" REAL, ""unitPriceExVat"" REAL, ""lineDiscountInclVat"" REAL, ""vatRate"" REAL, ""netSalesExVat"" REAL, ""vatAmount"" REAL, ""grossSalesInclVat"" REAL, ""cogsExVat"" REAL, ""grossMarginExVat"" REAL, ""returnFlag"" TEXT)
+
+Table descriptions:
+- items
+  row_count: 180
+  columns: __source_row_number, itemSku, itemDescription, category, subcategory, brand, packSize, unitOfMeasure, isPrivateLabel, discontinuedDate, baseVatRate, costExVat, shelfLifeDays, isAgeRestricted, storageType, countryOfOrigin, supplierId, supplierName
+  hints: no explicit return semantics column detected; contains date/time columns; no obvious monetary metric column detected
+  column_observations: itemSku [text-like] samples=SKU-00001 | SKU-00002 | SKU-00003 | SKU-00004 | SKU-00005 ; category [text-like] samples=Beverages | Snacks | Produce | Dairy | Bakery ; subcategory [text-like] samples=Sparkling Water | Juice | Soda | Energy Drink | Potato Chips ; brand [text-like] samples=AquaVale | FizzUp | Pulse8 | Citrus Trail | PeakFuel ; discontinuedDate [text-like] samples=2025-09-30 ; supplierId [text-like] samples=SUP-0101 | SUP-0102 | SUP-0103 | SUP-0104 | SUP-0105 ; supplierName [text-like] samples=Prime Source Supply | Greenway Supply | Atlas Supply | Blue Peak Supply | Northline Supply ; __source_row_number [text-like] samples=1.0 | 2.0 | 3.0 | 4.0 | 5.0 ; itemDescription [text-like] samples=AquaVale Sparkling Water 500 ml | FizzUp Sparkling Water 6 x 330 ml | FizzUp Sparkling Water 330 ml | Pulse8 Sparkling Water 1.5 L | FizzUp Sparkling Water 1.5 L
+- stores
+  row_count: 12
+  columns: __source_row_number, storeId, storeName, format, region, city, state, squareMeters, cluster
+  hints: no explicit return semantics column detected; no obvious date column detected; no obvious monetary metric column detected
+  column_observations: storeId [text-like] samples=ST001 | ST002 | ST003 | ST004 | ST005 ; storeName [text-like] samples=North Harbor Hyper | Rainier Express | Bridgeview Market | Oak Ridge Super | Lakeside Family ; __source_row_number [text-like] samples=1.0 | 2.0 | 3.0 | 4.0 | 5.0 ; format [text-like] samples=Hypermarket | Convenience | Supermarket | Discount | Cash & Carry ; region [text-like] samples=North | Midwest | South | West | Northeast ; city [text-like] samples=Seattle | Tacoma | Chicago | Nashville | Madison
+- transactions
+  row_count: 27675
+  columns: __source_row_number, transactionId, basketId, businessDate, transactionTimestamp, storeId, posTerminalId, receiptNumber, lineNumber, cashierId, channel, paymentMethod, loyaltyTier, itemSku, itemDescription, department, category, brand, units, unitPriceInclVat, unitPriceExVat, lineDiscountInclVat, vatRate, netSalesExVat, vatAmount, grossSalesInclVat, cogsExVat, grossMarginExVat, returnFlag
+  hints: contains return semantics columns; contains date/time columns; contains monetary metric columns
+  column_observations: businessDate [text-like] samples=2025-01-01 | 2025-01-02 | 2025-01-03 | 2025-01-04 | 2025-01-05 ; storeId [text-like] samples=ST001 | ST002 | ST003 | ST004 | ST005 ; channel [text-like] samples=In-Store | Click & Collect | Delivery ; paymentMethod [text-like] samples=Cash | Mobile Wallet | Gift Card | Card ; loyaltyTier [text-like] samples=Silver | None | Bronze | Gold ; itemSku [text-like] samples=SKU-00054 | SKU-00066 | SKU-00104 | SKU-00035 | SKU-00032 ; department [text-like] samples=Fresh | Household | Grocery | Pantry | Health ; category [text-like] samples=Produce | Dairy | Cleaning | Snacks | Bakery ; brand [text-like] samples=Sun Basket | CreamLine | PureHome | PeakFuel | Roam ; returnFlag [boolean-like] samples=No | Yes
+
+
+Reasoning mode:
+- deliberate
+- Before writing SQL, reason through this checklist internally:
+  1. identify requested metric semantics (gross vs net; return treatment)
+  2. choose correct table grain and avoid row multiplication in joins
+  3. verify filters align with schema value types (for example return flags)
+  4. ensure selected columns and grouping match the question exactly
+- Keep this reasoning internal; output SQL only.
+
+Rules:
+- Return SQL only.
+- Exactly one statement.
+- Statement must start with SELECT or WITH.
+- Use only tables/views shown in Available schema.
+- Do not use ATTACH, PRAGMA, DDL, or write operations.
+- Do not invent tables or columns.
+- If column descriptions are provided, treat them as semantic guidance for metric definitions.
+- For gross revenue or gross sales questions, treat gross as pre-return sales and exclude returned rows when a return flag exists.
+- For net revenue or net sales questions, include return impact instead of excluding returned rows.
+- If a return-flag column exists, use schema-appropriate values (for example, is_return = 0/1 or returnFlag = 'No'/'Yes') to model returns correctly.
+- Prefer explicit selected columns over SELECT *.
+- If joins are needed, join explicitly on matching keys.
+- Include ORDER BY when deterministic ordering is relevant to the question.","You are evaluating whether a SQL answer is correct for a user question.
+
+Question:
+Can you show me the top 3 stores by total gross revenue before returns (incl. VAT; exclude returned items)?
+
+Ground truth expected rows JSON:
+[{""storeId"":""ST001"",""storeName"":""North Harbor Hyper"",""revenue_incl_vat"":15352.52},{""storeId"":""ST002"",""storeName"":""Rainier Express"",""revenue_incl_vat"":14334.34},{""storeId"":""ST007"",""storeName"":""Canyon Plaza Hyper"",""revenue_incl_vat"":14329.05}]
+
+Model generated rows JSON:
+[{""storeId"":""ST001"",""storeName"":""North Harbor Hyper"",""totalGrossRevenueInclVat"":15352.52},{""storeId"":""ST002"",""storeName"":""Rainier Express"",""totalGrossRevenueInclVat"":14334.34},{""storeId"":""ST007"",""storeName"":""Canyon Plaza Hyper"",""totalGrossRevenueInclVat"":14329.05}]
+
+Execution error (if any):
+none
+
+Rules:
+- If execution error exists, classify false.
+- Judge correctness by semantic equivalence of result content.
+- Allow numeric tolerance of absolute difference <= 0.01.
+- If row or column ordering differs but content is equivalent, classify true.
+
+Return ONLY valid JSON with this exact shape:
+{
+  ""isCorrect"": true or false,
+  ""reason"": ""short explanation""
+}","[""You are evaluating SQL result correctness for one expected ground-truth row.\n\nScenario:\nScenario 1 (Raw)\n\nQuestion:\nCan you show me the top 3 stores by total gross revenue before returns (incl. VAT; exclude returned items)?\n\nExpected row index:\n0\n\nExpected row JSON:\n{\""storeId\"":\""ST001\"",\""storeName\"":\""North Harbor Hyper\"",\""revenue_incl_vat\"":15352.52}\n\nActual result rows JSON:\n[{\""storeId\"":\""ST001\"",\""storeName\"":\""North Harbor Hyper\"",\""totalGrossRevenueInclVat\"":15352.52},{\""storeId\"":\""ST002\"",\""storeName\"":\""Rainier Express\"",\""totalGrossRevenueInclVat\"":14334.34},{\""storeId\"":\""ST007\"",\""storeName\"":\""Canyon Plaza Hyper\"",\""totalGrossRevenueInclVat\"":14329.05}]\n\nTask:\n- Decide whether the expected row is matched by one or more actual rows.\n- Treat numeric values as matching if absolute difference <= 0.01.\n- Column names may differ; focus on row content and meaning.\n- If multiple actual rows match, include all their indexes.\n\nReturn ONLY valid JSON with this exact shape:\n{\n  \""matchedExpectedRow\"": true or false,\n  \""matchedActualRowIndexes\"": [0-based indexes],\n  \""confidence\"": \""low\"" | \""medium\"" | \""high\"",\n  \""reason\"": \""short reason\""\n}"",""You are evaluating SQL result correctness for one expected ground-truth row.\n\nScenario:\nScenario 1 (Raw)\n\nQuestion:\nCan you show me the top 3 stores by total gross revenue before returns (incl. VAT; exclude returned items)?\n\nExpected row index:\n1\n\nExpected row JSON:\n{\""storeId\"":\""ST002\"",\""storeName\"":\""Rainier Express\"",\""revenue_incl_vat\"":14334.34}\n\nActual result rows JSON:\n[{\""storeId\"":\""ST001\"",\""storeName\"":\""North Harbor Hyper\"",\""totalGrossRevenueInclVat\"":15352.52},{\""storeId\"":\""ST002\"",\""storeName\"":\""Rainier Express\"",\""totalGrossRevenueInclVat\"":14334.34},{\""storeId\"":\""ST007\"",\""storeName\"":\""Canyon Plaza Hyper\"",\""totalGrossRevenueInclVat\"":14329.05}]\n\nTask:\n- Decide whether the expected row is matched by one or more actual rows.\n- Treat numeric values as matching if absolute difference <= 0.01.\n- Column names may differ; focus on row content and meaning.\n- If multiple actual rows match, include all their indexes.\n\nReturn ONLY valid JSON with this exact shape:\n{\n  \""matchedExpectedRow\"": true or false,\n  \""matchedActualRowIndexes\"": [0-based indexes],\n  \""confidence\"": \""low\"" | \""medium\"" | \""high\"",\n  \""reason\"": \""short reason\""\n}"",""You are evaluating SQL result correctness for one expected ground-truth row.\n\nScenario:\nScenario 1 (Raw)\n\nQuestion:\nCan you show me the top 3 stores by total gross revenue before returns (incl. VAT; exclude returned items)?\n\nExpected row index:\n2\n\nExpected row JSON:\n{\""storeId\"":\""ST007\"",\""storeName\"":\""Canyon Plaza Hyper\"",\""revenue_incl_vat\"":14329.05}\n\nActual result rows JSON:\n[{\""storeId\"":\""ST001\"",\""storeName\"":\""North Harbor Hyper\"",\""totalGrossRevenueInclVat\"":15352.52},{\""storeId\"":\""ST002\"",\""storeName\"":\""Rainier Express\"",\""totalGrossRevenueInclVat\"":14334.34},{\""storeId\"":\""ST007\"",\""storeName\"":\""Canyon Plaza Hyper\"",\""totalGrossRevenueInclVat\"":14329.05}]\n\nTask:\n- Decide whether the expected row is matched by one or more actual rows.\n- Treat numeric values as matching if absolute difference <= 0.01.\n- Column names may differ; focus on row content and meaning.\n- If multiple actual rows match, include all their indexes.\n\nReturn ONLY valid JSON with this exact shape:\n{\n  \""matchedExpectedRow\"": true or false,\n  \""matchedActualRowIndexes\"": [0-based indexes],\n  \""confidence\"": \""low\"" | \""medium\"" | \""high\"",\n  \""reason\"": \""short reason\""\n}""]"
+/Users/perssonisak/Projects/private/self-updating-database/output/benchmarks/tmp-q005-only.json,q005,scenario_2_clean,Can you show me the top 3 stores by total gross revenue before returns (incl. VAT; exclude returned items)?,"SELECT t.storeId, s.storeName, ROUND(SUM(t.grossSalesInclVat), 2) AS revenue_incl_vat FROM transactions t JOIN stores s ON s.storeId = t.storeId WHERE t.returnFlag = 'No' GROUP BY t.storeId, s.storeName ORDER BY revenue_incl_vat DESC LIMIT 3;","SELECT
+    s.store_id,
+    s.store_name,
+    SUM(t.gross_sales_incl_vat) AS total_gross_revenue_incl_vat
+FROM transactions_clean AS t
+JOIN stores_clean AS s
+  ON t.store_id = s.store_id
+WHERE t.return_flag = 'No'
+GROUP BY s.store_id, s.store_name
+ORDER BY total_gross_revenue_incl_vat DESC
+LIMIT 3;","[{""storeId"":""ST001"",""storeName"":""North Harbor Hyper"",""revenue_incl_vat"":15352.52},{""storeId"":""ST002"",""storeName"":""Rainier Express"",""revenue_incl_vat"":14334.34},{""storeId"":""ST007"",""storeName"":""Canyon Plaza Hyper"",""revenue_incl_vat"":14329.05}]","[{""store_id"":""ST001"",""store_name"":""North Harbor Hyper"",""total_gross_revenue_incl_vat"":15352.52},{""store_id"":""ST002"",""store_name"":""Rainier Express"",""total_gross_revenue_incl_vat"":14334.34},{""store_id"":""ST007"",""store_name"":""Canyon Plaza Hyper"",""total_gross_revenue_incl_vat"":14329.05}]",gpt-5.4-mini,gpt-5.4-mini,true,"The returned rows match the expected top 3 stores and revenue values exactly (within tolerance). Only the column names differ, which is acceptable since the content is semantically equivalent.",true,false,true,3,3,1,true,40.713042,3,3,,"- It uses the clean fact table transactions_clean and the store dimension stores_clean, which fits Scenario 2 and gives reliable, standardized fields.
+- The JOIN on store_id links each transaction to its store so revenue can be summed at the store level.
+- The WHERE t.return_flag = 'No' clause excludes returned items, so only non-returned sales contribute to revenue.
+- SUM(t.gross_sales_incl_vat) computes total gross revenue including VAT, matching the question’s “incl. VAT” requirement.
+- GROUP BY store_id, store_name plus ORDER BY total_gross_revenue_incl_vat DESC and LIMIT 3 returns the top 3 stores by that total.","You generate exactly one SQLite SQL statement.
+
+Scenario 2: cleaned canonical schema.
+
+User question:
+Can you show me the top 3 stores by total gross revenue before returns (incl. VAT; exclude returned items)?
+
+Available schema:
+TABLE items_clean
+CREATE TABLE items_clean(
+  item_sku,
+  item_description,
+  category,
+  subcategory,
+  brand,
+  pack_size,
+  unit_of_measure,
+  is_private_label,
+  discontinued_date,
+  base_vat_rate NUM,
+  cost_ex_vat NUM,
+  shelf_life_days,
+  is_age_restricted,
+  storage_type,
+  country_of_origin,
+  supplier_id,
+  supplier_name
+)
+
+TABLE stores_clean
+CREATE TABLE stores_clean(
+  store_id,
+  store_name,
+  store_format,
+  region,
+  city,
+  state,
+  square_meters INT,
+  cluster
+)
+
+TABLE transactions_clean
+CREATE TABLE transactions_clean(
+  transaction_id,
+  basket_id,
+  business_date,
+  transaction_timestamp,
+  store_id,
+  pos_terminal_id,
+  receipt_number,
+  line_number INT,
+  cashier_id,
+  channel,
+  payment_method,
+  loyalty_tier,
+  item_sku,
+  item_description,
+  department,
+  category,
+  brand,
+  units NUM,
+  unit_price_incl_vat NUM,
+  unit_price_ex_vat NUM,
+  line_discount_incl_vat NUM,
+  vat_rate NUM,
+  net_sales_ex_vat NUM,
+  vat_amount NUM,
+  gross_sales_incl_vat NUM,
+  cogs_ex_vat NUM,
+  gross_margin_ex_vat NUM,
+  return_flag
+)
+
+Table descriptions:
+- items_clean
+  row_count: 180
+  columns: item_sku, item_description, category, subcategory, brand, pack_size, unit_of_measure, is_private_label, discontinued_date, base_vat_rate, cost_ex_vat, shelf_life_days, is_age_restricted, storage_type, country_of_origin, supplier_id, supplier_name
+  hints: no explicit return semantics column detected; contains date/time columns; no obvious monetary metric column detected
+  column_observations: item_sku [text-like] samples=SKU-00001 | SKU-00002 | SKU-00003 | SKU-00004 | SKU-00005 ; category [text-like] samples=Alcohol | Bakery | Beverages | Cleaning | Dairy ; subcategory [text-like] samples=Sparkling Water | Juice | Soda | Energy Drink | Potato Chips ; brand [text-like] samples=AquaVale | FizzUp | Pulse8 | Citrus Trail | PeakFuel ; is_private_label [boolean-like] samples=Yes | No ; discontinued_date [text-like] samples=2025-09-30 ; is_age_restricted [boolean-like] samples=No | Yes ; supplier_id [text-like] samples=SUP-0101 | SUP-0102 | SUP-0103 | SUP-0104 | SUP-0105 ; supplier_name [text-like] samples=Prime Source Supply | Greenway Supply | Atlas Supply | Blue Peak Supply | Northline Supply
+- stores_clean
+  row_count: 12
+  columns: store_id, store_name, store_format, region, city, state, square_meters, cluster
+  hints: no explicit return semantics column detected; no obvious date column detected; no obvious monetary metric column detected
+  column_observations: store_id [text-like] samples=ST001 | ST002 | ST003 | ST004 | ST005 ; store_name [text-like] samples=North Harbor Hyper | Rainier Express | Bridgeview Market | Oak Ridge Super | Lakeside Family ; store_format [text-like] samples=Hypermarket | Convenience | Supermarket | Discount | Cash & Carry ; region [text-like] samples=Midwest | North | Northeast | South | West ; city [text-like] samples=Seattle | Tacoma | Chicago | Nashville | Madison ; state [text-like] samples=WA | IL | TN | WI | CA
+- transactions_clean
+  row_count: 27675
+  columns: transaction_id, basket_id, business_date, transaction_timestamp, store_id, pos_terminal_id, receipt_number, line_number, cashier_id, channel, payment_method, loyalty_tier, item_sku, item_description, department, category, brand, units, unit_price_incl_vat, unit_price_ex_vat, line_discount_incl_vat, vat_rate, net_sales_ex_vat, vat_amount, gross_sales_incl_vat, cogs_ex_vat, gross_margin_ex_vat, return_flag
+  hints: contains return semantics columns; contains date/time columns; contains monetary metric columns
+  column_observations: business_date [text-like] samples=2025-01-01 | 2025-01-02 | 2025-01-03 | 2025-01-04 | 2025-01-05 ; store_id [text-like] samples=ST001 | ST002 | ST003 | ST004 | ST005 ; channel [text-like] samples=In-Store | Click & Collect | Delivery ; payment_method [text-like] samples=Cash | Mobile Wallet | Gift Card | Card ; loyalty_tier [text-like] samples=Silver | None | Bronze | Gold ; item_sku [text-like] samples=SKU-00001 | SKU-00002 | SKU-00003 | SKU-00004 | SKU-00005 ; department [text-like] samples=Fresh | Household | Grocery | Pantry | Health ; category [text-like] samples=Produce | Dairy | Cleaning | Snacks | Bakery ; brand [text-like] samples=Sun Basket | CreamLine | PureHome | PeakFuel | Roam ; return_flag [boolean-like] samples=No | Yes
+
+
+Reasoning mode:
+- deliberate
+- Before writing SQL, reason through this checklist internally:
+  1. identify requested metric semantics (gross vs net; return treatment)
+  2. choose correct table grain and avoid row multiplication in joins
+  3. verify filters align with schema value types (for example return flags)
+  4. ensure selected columns and grouping match the question exactly
+- Keep this reasoning internal; output SQL only.
+
+Rules:
+- Return SQL only.
+- Exactly one statement.
+- Statement must start with SELECT or WITH.
+- Use only tables/views shown in Available schema.
+- Do not use ATTACH, PRAGMA, DDL, or write operations.
+- Do not invent tables or columns.
+- If column descriptions are provided, treat them as semantic guidance for metric definitions.
+- For gross revenue or gross sales questions, treat gross as pre-return sales and exclude returned rows when a return flag exists.
+- For net revenue or net sales questions, include return impact instead of excluding returned rows.
+- If a return-flag column exists, use schema-appropriate values (for example, is_return = 0/1 or returnFlag = 'No'/'Yes') to model returns correctly.
+- Prefer explicit selected columns over SELECT *.
+- If joins are needed, join explicitly on matching keys.
+- Include ORDER BY when deterministic ordering is relevant to the question.","You are evaluating whether a SQL answer is correct for a user question.
+
+Question:
+Can you show me the top 3 stores by total gross revenue before returns (incl. VAT; exclude returned items)?
+
+Ground truth expected rows JSON:
+[{""storeId"":""ST001"",""storeName"":""North Harbor Hyper"",""revenue_incl_vat"":15352.52},{""storeId"":""ST002"",""storeName"":""Rainier Express"",""revenue_incl_vat"":14334.34},{""storeId"":""ST007"",""storeName"":""Canyon Plaza Hyper"",""revenue_incl_vat"":14329.05}]
+
+Model generated rows JSON:
+[{""store_id"":""ST001"",""store_name"":""North Harbor Hyper"",""total_gross_revenue_incl_vat"":15352.52},{""store_id"":""ST002"",""store_name"":""Rainier Express"",""total_gross_revenue_incl_vat"":14334.34},{""store_id"":""ST007"",""store_name"":""Canyon Plaza Hyper"",""total_gross_revenue_incl_vat"":14329.05}]
+
+Execution error (if any):
+none
+
+Rules:
+- If execution error exists, classify false.
+- Judge correctness by semantic equivalence of result content.
+- Allow numeric tolerance of absolute difference <= 0.01.
+- If row or column ordering differs but content is equivalent, classify true.
+
+Return ONLY valid JSON with this exact shape:
+{
+  ""isCorrect"": true or false,
+  ""reason"": ""short explanation""
+}","[""You are evaluating SQL result correctness for one expected ground-truth row.\n\nScenario:\nScenario 2 (Clean)\n\nQuestion:\nCan you show me the top 3 stores by total gross revenue before returns (incl. VAT; exclude returned items)?\n\nExpected row index:\n0\n\nExpected row JSON:\n{\""storeId\"":\""ST001\"",\""storeName\"":\""North Harbor Hyper\"",\""revenue_incl_vat\"":15352.52}\n\nActual result rows JSON:\n[{\""store_id\"":\""ST001\"",\""store_name\"":\""North Harbor Hyper\"",\""total_gross_revenue_incl_vat\"":15352.52},{\""store_id\"":\""ST002\"",\""store_name\"":\""Rainier Express\"",\""total_gross_revenue_incl_vat\"":14334.34},{\""store_id\"":\""ST007\"",\""store_name\"":\""Canyon Plaza Hyper\"",\""total_gross_revenue_incl_vat\"":14329.05}]\n\nTask:\n- Decide whether the expected row is matched by one or more actual rows.\n- Treat numeric values as matching if absolute difference <= 0.01.\n- Column names may differ; focus on row content and meaning.\n- If multiple actual rows match, include all their indexes.\n\nReturn ONLY valid JSON with this exact shape:\n{\n  \""matchedExpectedRow\"": true or false,\n  \""matchedActualRowIndexes\"": [0-based indexes],\n  \""confidence\"": \""low\"" | \""medium\"" | \""high\"",\n  \""reason\"": \""short reason\""\n}"",""You are evaluating SQL result correctness for one expected ground-truth row.\n\nScenario:\nScenario 2 (Clean)\n\nQuestion:\nCan you show me the top 3 stores by total gross revenue before returns (incl. VAT; exclude returned items)?\n\nExpected row index:\n1\n\nExpected row JSON:\n{\""storeId\"":\""ST002\"",\""storeName\"":\""Rainier Express\"",\""revenue_incl_vat\"":14334.34}\n\nActual result rows JSON:\n[{\""store_id\"":\""ST001\"",\""store_name\"":\""North Harbor Hyper\"",\""total_gross_revenue_incl_vat\"":15352.52},{\""store_id\"":\""ST002\"",\""store_name\"":\""Rainier Express\"",\""total_gross_revenue_incl_vat\"":14334.34},{\""store_id\"":\""ST007\"",\""store_name\"":\""Canyon Plaza Hyper\"",\""total_gross_revenue_incl_vat\"":14329.05}]\n\nTask:\n- Decide whether the expected row is matched by one or more actual rows.\n- Treat numeric values as matching if absolute difference <= 0.01.\n- Column names may differ; focus on row content and meaning.\n- If multiple actual rows match, include all their indexes.\n\nReturn ONLY valid JSON with this exact shape:\n{\n  \""matchedExpectedRow\"": true or false,\n  \""matchedActualRowIndexes\"": [0-based indexes],\n  \""confidence\"": \""low\"" | \""medium\"" | \""high\"",\n  \""reason\"": \""short reason\""\n}"",""You are evaluating SQL result correctness for one expected ground-truth row.\n\nScenario:\nScenario 2 (Clean)\n\nQuestion:\nCan you show me the top 3 stores by total gross revenue before returns (incl. VAT; exclude returned items)?\n\nExpected row index:\n2\n\nExpected row JSON:\n{\""storeId\"":\""ST007\"",\""storeName\"":\""Canyon Plaza Hyper\"",\""revenue_incl_vat\"":14329.05}\n\nActual result rows JSON:\n[{\""store_id\"":\""ST001\"",\""store_name\"":\""North Harbor Hyper\"",\""total_gross_revenue_incl_vat\"":15352.52},{\""store_id\"":\""ST002\"",\""store_name\"":\""Rainier Express\"",\""total_gross_revenue_incl_vat\"":14334.34},{\""store_id\"":\""ST007\"",\""store_name\"":\""Canyon Plaza Hyper\"",\""total_gross_revenue_incl_vat\"":14329.05}]\n\nTask:\n- Decide whether the expected row is matched by one or more actual rows.\n- Treat numeric values as matching if absolute difference <= 0.01.\n- Column names may differ; focus on row content and meaning.\n- If multiple actual rows match, include all their indexes.\n\nReturn ONLY valid JSON with this exact shape:\n{\n  \""matchedExpectedRow\"": true or false,\n  \""matchedActualRowIndexes\"": [0-based indexes],\n  \""confidence\"": \""low\"" | \""medium\"" | \""high\"",\n  \""reason\"": \""short reason\""\n}""]"
+/Users/perssonisak/Projects/private/self-updating-database/output/benchmarks/tmp-q005-only.json,q005,scenario_3a_optimized,Can you show me the top 3 stores by total gross revenue before returns (incl. VAT; exclude returned items)?,"SELECT t.storeId, s.storeName, ROUND(SUM(t.grossSalesInclVat), 2) AS revenue_incl_vat FROM transactions t JOIN stores s ON s.storeId = t.storeId WHERE t.returnFlag = 'No' GROUP BY t.storeId, s.storeName ORDER BY revenue_incl_vat DESC LIMIT 3;","WITH store_totals AS (
+  SELECT
+    t.store_id,
+    SUM(t.gross_sales_incl_vat) AS total_gross_revenue_incl_vat
+  FROM transactions_clean t
+  WHERE t.return_flag = 'No'
+  GROUP BY t.store_id
+)
+SELECT
+  s.store_id,
+  s.store_name,
+  st.total_gross_revenue_incl_vat
+FROM store_totals st
+JOIN stores_clean s
+  ON s.store_id = st.store_id
+ORDER BY st.total_gross_revenue_incl_vat DESC, s.store_name
+LIMIT 3;","[{""storeId"":""ST001"",""storeName"":""North Harbor Hyper"",""revenue_incl_vat"":15352.52},{""storeId"":""ST002"",""storeName"":""Rainier Express"",""revenue_incl_vat"":14334.34},{""storeId"":""ST007"",""storeName"":""Canyon Plaza Hyper"",""revenue_incl_vat"":14329.05}]","[{""store_id"":""ST001"",""store_name"":""North Harbor Hyper"",""total_gross_revenue_incl_vat"":15352.52},{""store_id"":""ST002"",""store_name"":""Rainier Express"",""total_gross_revenue_incl_vat"":14334.34},{""store_id"":""ST007"",""store_name"":""Canyon Plaza Hyper"",""total_gross_revenue_incl_vat"":14329.05}]",gpt-5.4-mini,gpt-5.4-mini,true,"The returned rows match the expected top 3 stores and revenue values exactly (within tolerance). Column names differ, but the content is semantically equivalent.",true,false,true,3,3,1,true,21.331083,3,3,,"- It uses transactions_clean because the question is about actual transaction revenue, and this table has the gross_sales_incl_vat amount plus the return_flag needed to exclude returns.
+- The CTE store_totals groups by store_id and sums gross_sales_incl_vat, so it calculates each store’s total gross revenue before returns, including VAT.
+- The WHERE t.return_flag = 'No' condition implements the return-handling semantics by excluding returned items from the revenue total.
+- It then joins to stores_clean to fetch the store_name for each store_id; this is a simple lookup join on the store key, not a filtering join.
+- Finally, it orders by total gross revenue descending and limits to 3, which returns the top 3 stores by that metric.","You generate exactly one SQLite SQL statement.
+
+Scenario 3a: optimized schema built on top of cleaned data.
+
+User question:
+Can you show me the top 3 stores by total gross revenue before returns (incl. VAT; exclude returned items)?
+
+Available schema:
+TABLE business_dates
+CREATE TABLE business_dates(business_date)
+
+TABLE items_clean
+CREATE TABLE items_clean(
+  item_sku,
+  item_description,
+  category,
+  subcategory,
+  brand,
+  pack_size,
+  unit_of_measure,
+  is_private_label,
+  discontinued_date,
+  base_vat_rate NUM,
+  cost_ex_vat NUM,
+  shelf_life_days,
+  is_age_restricted,
+  storage_type,
+  country_of_origin,
+  supplier_id,
+  supplier_name
+)
+
+TABLE sku_daily_metrics
+CREATE TABLE sku_daily_metrics(
+  business_date,
+  item_sku,
+  units_sold_gross,
+  revenue_incl_vat_gross,
+  cogs_ex_vat_gross,
+  units_sold_net,
+  revenue_incl_vat_net,
+  cogs_ex_vat_net
+)
+
+TABLE stores_clean
+CREATE TABLE stores_clean(
+  store_id,
+  store_name,
+  store_format,
+  region,
+  city,
+  state,
+  square_meters INT,
+  cluster
+)
+
+TABLE transactions_clean
+CREATE TABLE transactions_clean(
+  transaction_id,
+  basket_id,
+  business_date,
+  transaction_timestamp,
+  store_id,
+  pos_terminal_id,
+  receipt_number,
+  line_number INT,
+  cashier_id,
+  channel,
+  payment_method,
+  loyalty_tier,
+  item_sku,
+  item_description,
+  department,
+  category,
+  brand,
+  units NUM,
+  unit_price_incl_vat NUM,
+  unit_price_ex_vat NUM,
+  line_discount_incl_vat NUM,
+  vat_rate NUM,
+  net_sales_ex_vat NUM,
+  vat_amount NUM,
+  gross_sales_incl_vat NUM,
+  cogs_ex_vat NUM,
+  gross_margin_ex_vat NUM,
+  return_flag
+)
+
+Table descriptions:
+- business_dates
+  row_count: 90
+  columns: business_date
+  hints: no explicit return semantics column detected; contains date/time columns; no obvious monetary metric column detected
+  column_observations: business_date [text-like] samples=2025-01-01 | 2025-01-02 | 2025-01-03 | 2025-01-04 | 2025-01-05
+- items_clean
+  row_count: 180
+  columns: item_sku, item_description, category, subcategory, brand, pack_size, unit_of_measure, is_private_label, discontinued_date, base_vat_rate, cost_ex_vat, shelf_life_days, is_age_restricted, storage_type, country_of_origin, supplier_id, supplier_name
+  hints: no explicit return semantics column detected; contains date/time columns; no obvious monetary metric column detected
+  column_observations: item_sku [text-like] samples=SKU-00001 | SKU-00002 | SKU-00003 | SKU-00004 | SKU-00005 ; category [text-like] samples=Alcohol | Bakery | Beverages | Cleaning | Dairy ; subcategory [text-like] samples=Sparkling Water | Juice | Soda | Energy Drink | Potato Chips ; brand [text-like] samples=AquaVale | FizzUp | Pulse8 | Citrus Trail | PeakFuel ; is_private_label [boolean-like] samples=Yes | No ; discontinued_date [text-like] samples=2025-09-30 ; is_age_restricted [boolean-like] samples=No | Yes ; supplier_id [text-like] samples=SUP-0101 | SUP-0102 | SUP-0103 | SUP-0104 | SUP-0105 ; supplier_name [text-like] samples=Prime Source Supply | Greenway Supply | Atlas Supply | Blue Peak Supply | Northline Supply
+- sku_daily_metrics
+  row_count: 12783
+  columns: business_date, item_sku, units_sold_gross, revenue_incl_vat_gross, cogs_ex_vat_gross, units_sold_net, revenue_incl_vat_net, cogs_ex_vat_net
+  hints: no explicit return semantics column detected; contains date/time columns; contains monetary metric columns
+  column_observations: business_date [text-like] samples=2025-01-01 | 2025-01-02 | 2025-01-03 | 2025-01-04 | 2025-01-05 ; item_sku [text-like] samples=SKU-00001 | SKU-00002 | SKU-00003 | SKU-00004 | SKU-00005 ; units_sold_gross [text-like, boolean-like] samples=3 | 9 | 2 | 4 | 1 ; revenue_incl_vat_gross [text-like] samples=6.11 | 7.8 | 25.09 | 4.33 | 10.43 ; cogs_ex_vat_gross [text-like] samples=3.48 | 4.83 | 14.22 | 2.66 | 6.2 ; units_sold_net [text-like, boolean-like] samples=3 | 4 | 9 | 2 | 1
+- stores_clean
+  row_count: 12
+  columns: store_id, store_name, store_format, region, city, state, square_meters, cluster
+  hints: no explicit return semantics column detected; no obvious date column detected; no obvious monetary metric column detected
+  column_observations: store_id [text-like] samples=ST001 | ST002 | ST003 | ST004 | ST005 ; store_name [text-like] samples=North Harbor Hyper | Rainier Express | Bridgeview Market | Oak Ridge Super | Lakeside Family ; store_format [text-like] samples=Hypermarket | Convenience | Supermarket | Discount | Cash & Carry ; region [text-like] samples=Midwest | North | Northeast | South | West ; city [text-like] samples=Seattle | Tacoma | Chicago | Nashville | Madison ; state [text-like] samples=WA | IL | TN | WI | CA
+- transactions_clean
+  row_count: 27675
+  columns: transaction_id, basket_id, business_date, transaction_timestamp, store_id, pos_terminal_id, receipt_number, line_number, cashier_id, channel, payment_method, loyalty_tier, item_sku, item_description, department, category, brand, units, unit_price_incl_vat, unit_price_ex_vat, line_discount_incl_vat, vat_rate, net_sales_ex_vat, vat_amount, gross_sales_incl_vat, cogs_ex_vat, gross_margin_ex_vat, return_flag
+  hints: contains return semantics columns; contains date/time columns; contains monetary metric columns
+  column_observations: business_date [text-like] samples=2025-01-01 | 2025-01-02 | 2025-01-03 | 2025-01-04 | 2025-01-05 ; store_id [text-like] samples=ST001 | ST002 | ST003 | ST004 | ST005 ; channel [text-like] samples=In-Store | Click & Collect | Delivery ; payment_method [text-like] samples=Cash | Mobile Wallet | Gift Card | Card ; loyalty_tier [text-like] samples=Silver | None | Bronze | Gold ; item_sku [text-like] samples=SKU-00001 | SKU-00002 | SKU-00003 | SKU-00004 | SKU-00005 ; department [text-like] samples=Fresh | Household | Grocery | Pantry | Health ; category [text-like] samples=Produce | Dairy | Cleaning | Snacks | Bakery ; brand [text-like] samples=Sun Basket | CreamLine | PureHome | PeakFuel | Roam ; return_flag [boolean-like] samples=No | Yes
+
+Column descriptions:
+- business_dates.business_date: Distinct non-null transaction business dates used as a reusable date spine for gap-filling queries.
+- sku_daily_metrics.business_date: Transaction business date at daily grain.
+- sku_daily_metrics.item_sku: Normalized SKU at daily grain.
+- sku_daily_metrics.units_sold_gross: Sum of units excluding return rows (gross-before-returns units).
+- sku_daily_metrics.revenue_incl_vat_gross: Sum of gross_sales_incl_vat excluding return rows (gross-before-returns revenue).
+- sku_daily_metrics.cogs_ex_vat_gross: Sum of cogs_ex_vat excluding return rows (gross-before-returns cost).
+- sku_daily_metrics.units_sold_net: Signed units where returns subtract from sales (net units).
+- sku_daily_metrics.revenue_incl_vat_net: Signed gross_sales_incl_vat where returns subtract from sales (net revenue including VAT).
+- sku_daily_metrics.cogs_ex_vat_net: Signed cogs_ex_vat where returns subtract from cost (net COGS excluding VAT).
+
+Reasoning mode:
+- deliberate
+- Before writing SQL, reason through this checklist internally:
+  1. identify requested metric semantics (gross vs net; return treatment)
+  2. choose correct table grain and avoid row multiplication in joins
+  3. verify filters align with schema value types (for example return flags)
+  4. ensure selected columns and grouping match the question exactly
+- Keep this reasoning internal; output SQL only.
+
+Rules:
+- Return SQL only.
+- Exactly one statement.
+- Statement must start with SELECT or WITH.
+- Use only tables/views shown in Available schema.
+- Do not use ATTACH, PRAGMA, DDL, or write operations.
+- Do not invent tables or columns.
+- If column descriptions are provided, treat them as semantic guidance for metric definitions.
+- For gross revenue or gross sales questions, treat gross as pre-return sales and exclude returned rows when a return flag exists.
+- For net revenue or net sales questions, include return impact instead of excluding returned rows.
+- If a return-flag column exists, use schema-appropriate values (for example, is_return = 0/1 or returnFlag = 'No'/'Yes') to model returns correctly.
+- Prefer explicit selected columns over SELECT *.
+- If joins are needed, join explicitly on matching keys.
+- Include ORDER BY when deterministic ordering is relevant to the question.","You are evaluating whether a SQL answer is correct for a user question.
+
+Question:
+Can you show me the top 3 stores by total gross revenue before returns (incl. VAT; exclude returned items)?
+
+Ground truth expected rows JSON:
+[{""storeId"":""ST001"",""storeName"":""North Harbor Hyper"",""revenue_incl_vat"":15352.52},{""storeId"":""ST002"",""storeName"":""Rainier Express"",""revenue_incl_vat"":14334.34},{""storeId"":""ST007"",""storeName"":""Canyon Plaza Hyper"",""revenue_incl_vat"":14329.05}]
+
+Model generated rows JSON:
+[{""store_id"":""ST001"",""store_name"":""North Harbor Hyper"",""total_gross_revenue_incl_vat"":15352.52},{""store_id"":""ST002"",""store_name"":""Rainier Express"",""total_gross_revenue_incl_vat"":14334.34},{""store_id"":""ST007"",""store_name"":""Canyon Plaza Hyper"",""total_gross_revenue_incl_vat"":14329.05}]
+
+Execution error (if any):
+none
+
+Rules:
+- If execution error exists, classify false.
+- Judge correctness by semantic equivalence of result content.
+- Allow numeric tolerance of absolute difference <= 0.01.
+- If row or column ordering differs but content is equivalent, classify true.
+
+Return ONLY valid JSON with this exact shape:
+{
+  ""isCorrect"": true or false,
+  ""reason"": ""short explanation""
+}","[""You are evaluating SQL result correctness for one expected ground-truth row.\n\nScenario:\nScenario 3a (Optimized)\n\nQuestion:\nCan you show me the top 3 stores by total gross revenue before returns (incl. VAT; exclude returned items)?\n\nExpected row index:\n0\n\nExpected row JSON:\n{\""storeId\"":\""ST001\"",\""storeName\"":\""North Harbor Hyper\"",\""revenue_incl_vat\"":15352.52}\n\nActual result rows JSON:\n[{\""store_id\"":\""ST001\"",\""store_name\"":\""North Harbor Hyper\"",\""total_gross_revenue_incl_vat\"":15352.52},{\""store_id\"":\""ST002\"",\""store_name\"":\""Rainier Express\"",\""total_gross_revenue_incl_vat\"":14334.34},{\""store_id\"":\""ST007\"",\""store_name\"":\""Canyon Plaza Hyper\"",\""total_gross_revenue_incl_vat\"":14329.05}]\n\nTask:\n- Decide whether the expected row is matched by one or more actual rows.\n- Treat numeric values as matching if absolute difference <= 0.01.\n- Column names may differ; focus on row content and meaning.\n- If multiple actual rows match, include all their indexes.\n\nReturn ONLY valid JSON with this exact shape:\n{\n  \""matchedExpectedRow\"": true or false,\n  \""matchedActualRowIndexes\"": [0-based indexes],\n  \""confidence\"": \""low\"" | \""medium\"" | \""high\"",\n  \""reason\"": \""short reason\""\n}"",""You are evaluating SQL result correctness for one expected ground-truth row.\n\nScenario:\nScenario 3a (Optimized)\n\nQuestion:\nCan you show me the top 3 stores by total gross revenue before returns (incl. VAT; exclude returned items)?\n\nExpected row index:\n1\n\nExpected row JSON:\n{\""storeId\"":\""ST002\"",\""storeName\"":\""Rainier Express\"",\""revenue_incl_vat\"":14334.34}\n\nActual result rows JSON:\n[{\""store_id\"":\""ST001\"",\""store_name\"":\""North Harbor Hyper\"",\""total_gross_revenue_incl_vat\"":15352.52},{\""store_id\"":\""ST002\"",\""store_name\"":\""Rainier Express\"",\""total_gross_revenue_incl_vat\"":14334.34},{\""store_id\"":\""ST007\"",\""store_name\"":\""Canyon Plaza Hyper\"",\""total_gross_revenue_incl_vat\"":14329.05}]\n\nTask:\n- Decide whether the expected row is matched by one or more actual rows.\n- Treat numeric values as matching if absolute difference <= 0.01.\n- Column names may differ; focus on row content and meaning.\n- If multiple actual rows match, include all their indexes.\n\nReturn ONLY valid JSON with this exact shape:\n{\n  \""matchedExpectedRow\"": true or false,\n  \""matchedActualRowIndexes\"": [0-based indexes],\n  \""confidence\"": \""low\"" | \""medium\"" | \""high\"",\n  \""reason\"": \""short reason\""\n}"",""You are evaluating SQL result correctness for one expected ground-truth row.\n\nScenario:\nScenario 3a (Optimized)\n\nQuestion:\nCan you show me the top 3 stores by total gross revenue before returns (incl. VAT; exclude returned items)?\n\nExpected row index:\n2\n\nExpected row JSON:\n{\""storeId\"":\""ST007\"",\""storeName\"":\""Canyon Plaza Hyper\"",\""revenue_incl_vat\"":14329.05}\n\nActual result rows JSON:\n[{\""store_id\"":\""ST001\"",\""store_name\"":\""North Harbor Hyper\"",\""total_gross_revenue_incl_vat\"":15352.52},{\""store_id\"":\""ST002\"",\""store_name\"":\""Rainier Express\"",\""total_gross_revenue_incl_vat\"":14334.34},{\""store_id\"":\""ST007\"",\""store_name\"":\""Canyon Plaza Hyper\"",\""total_gross_revenue_incl_vat\"":14329.05}]\n\nTask:\n- Decide whether the expected row is matched by one or more actual rows.\n- Treat numeric values as matching if absolute difference <= 0.01.\n- Column names may differ; focus on row content and meaning.\n- If multiple actual rows match, include all their indexes.\n\nReturn ONLY valid JSON with this exact shape:\n{\n  \""matchedExpectedRow\"": true or false,\n  \""matchedActualRowIndexes\"": [0-based indexes],\n  \""confidence\"": \""low\"" | \""medium\"" | \""high\"",\n  \""reason\"": \""short reason\""\n}""]"

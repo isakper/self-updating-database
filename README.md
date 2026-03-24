@@ -87,3 +87,28 @@ API base URL defaults to `http://127.0.0.1:3001`.
 Override with `--api-base-url <url>` or `API_BASE_URL`.
 
 See detailed CLI notes in [docs/CLI.md](docs/CLI.md).
+
+## Latest Eval Results (March 24, 2026)
+
+Dataset: `dataset_ykadj93p`  
+Model: `gpt-5.4-mini`  
+Reasoning mode: `deliberate`  
+Question sets: dataset 1 + dataset 2 (40 questions per scenario)
+
+### Full eval summary
+
+- `scenario_1_raw`: relaxed `34/40`, strict `2/40`, avg SQL `17.79ms`, SQL errors `1`
+- `scenario_2_clean`: relaxed `34/40`, strict `1/40`, avg SQL `11.587ms`, SQL errors `0`
+- `scenario_3a_optimized`: relaxed `35/40`, strict `0/40`, avg SQL `8.87ms`, SQL errors `0`
+
+### Artifacts
+
+- Full benchmark CSV: `docs/reports/2026-03-24-eval/sql-benchmark-dataset_ykadj93p-full-deliberate-latest.csv`
+- Full benchmark JSON: `docs/reports/2026-03-24-eval/sql-benchmark-dataset_ykadj93p-full-deliberate-latest.json`
+- Scenario 3a with reasoning CSV: `docs/reports/2026-03-24-eval/sql-benchmark-dataset_ykadj93p-s3a-gpt54mini-deliberate-with-reasoning.csv`
+- Scenario 3a with reasoning JSON: `docs/reports/2026-03-24-eval/sql-benchmark-dataset_ykadj93p-s3a-gpt54mini-deliberate-with-reasoning.json`
+- One-question cross-scenario check (`q005`) CSV/JSON:
+  - `docs/reports/2026-03-24-eval/q005-all-scenarios.csv`
+  - `docs/reports/2026-03-24-eval/q005-all-scenarios.json`
+- Applied optimized pipeline SQL:
+  - `docs/reports/2026-03-24-eval/pipeline_version_5n9pv9xq.sql`
