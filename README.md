@@ -61,7 +61,7 @@ flowchart LR
   U --> L[/Upload Query Logs/]
 
   W --> S[("Immutable Source DB<br/>raw tables")]
-  L --> QL[("Query Log Store<br/>question + SQL + results<br/>timing + scenario/revision + feedback")]
+  L --> QL[("Query Log Store<br/>prompt + SQL + row count/sample<br/>timing + clean DB id + pattern metadata")]
 
   S --> C{{Cleanup Pipeline Generation + Run<br/>Codex/LLM}}
   C --> CDB[("Clean DB Revision<br/>active baseline")]
@@ -107,10 +107,6 @@ flowchart LR
 
 Scenario mapping: Scenario 1 queries the immutable raw DB, Scenario 2 queries the active clean DB revision, and Scenario 3a queries the active optimized DB revision.
 
-Prompt construction differs by scenario: the raw path uses the raw schema and basic table profiles, the clean path adds cleaned naming and richer column descriptions, and the optimized path includes those column descriptions plus derived objects and optimization hints that explain which precomputed structures should be preferred when generating SQL.
-
-The query log store is meant to keep the natural-language question, the generated SQL query, and the returned results, plus lightweight metadata such as timing, selected scenario or database revision, and evaluation or feedback signals that help rank repeated expensive patterns.
-
 ### Node deep dives
 
 #### Cleanup pipeline generation + run
@@ -120,12 +116,19 @@ The query log store is meant to keep the natural-language question, the generate
 - **Output:** A clean database revision that becomes the active baseline for querying and later optimization.
 - **Logic:** Standardize naming and formatting consistency, keep values at full precision, and avoid rewriting the underlying business meaning because the source database remains immutable.
 
+#### Query log store
+
+- **Purpose:** Persist query runs for auditability, clustering, and optimization.
+- **Input:** The natural-language prompt, generated SQL, execution status and timing, clean database id, result column names, row count, optional sampled result rows, and any used optimization objects.
+- **Output:** A stored query log, and for successful queries with generated SQL, attached pattern metadata such as `matchedClusterId`, `patternFingerprint`, and `patternSummaryJson`.
+- **Logic:** N/A.
+
 #### Cluster repeated questions
 
 - **Purpose:** Identify where users ask the same kind of question repeatedly.
-- **Input:** Historical query logs containing the natural-language question, generated SQL, returned results, and metadata such as usage frequency, timing, scenario, and revision context.
-- **Output:** A short ranked list of high-impact query groups for the optimization cycle.
-- **Logic:** Reduce each historical query to an intent pattern, treat literal values like dates or SKUs as parameters, and rank clusters by repeated usage plus latency impact so recurring expensive patterns rise above one-off questions.
+- **Input:** Successful query logs for the same clean database id that have generated SQL plus extracted pattern metadata.
+- **Output:** Query clusters keyed by clean database id and pattern fingerprint, with query count, cumulative and average execution latency, latest-seen timestamp, and representative query log ids.
+- **Logic:** Build clusters from normalized SQL structure, not from the prompt text. The fingerprint includes relations, parsed single-equality joins, filter shapes with literal values redacted, group-by keys, aggregate expressions, order-by clauses, query kind, optimization-eligibility, and clean database id. Unsupported shapes fall back to a fingerprint of redacted normalized SQL. Optimization candidates are then limited to optimization-eligible clusters seen more than once and ranked by cumulative execution latency, then query count, then recency.
 
 #### Optimization pipeline generation (Codex/LLM)
 
@@ -155,12 +158,12 @@ The query log store is meant to keep the natural-language question, the generate
 - **Output:** A single read-only SQL query and the resulting rows and timing from the selected scenario database.
 - **Logic:** Assemble scenario-specific prompt context, ask the LLM for a read-only query, enforce safety checks, execute against the selected database, and log the outcome so future optimization cycles can learn from the query pattern.
 
-#### SQL execution + LLM evaluation
+#### Execute SQL against selected scenario DB
 
-- **Purpose:** Compare raw vs clean vs optimized behavior on shared test question sets.
-- **Input:** Shared benchmark questions, generated SQL, expected outputs, and execution results across the scenario databases.
-- **Output:** CSV/JSON artifacts with generated SQL, expected output, actual output, timing, and evaluation reasoning for auditability.
-- **Logic:** Measure correctness against ground truth plus semantic review, track SQL execution speed with average and median timing, and package the results so scenario behavior can be compared consistently over time.
+- **Purpose:** Run the validated SQL against the database chosen for the current runtime or benchmark scenario.
+- **Input:** A validated read-only SQL statement plus the database path for the selected raw, clean, or optimized scenario.
+- **Output:** Result rows, column names, row count, and execution timing. In the runtime query API, a sampled subset of rows is also stored in the query log.
+- **Logic:** Execute the SQL directly against the selected SQLite database, measure execution time, return the rows to the caller or benchmark harness, and persist summarized result metadata on the runtime query path.
 
 ### Command reference
 
